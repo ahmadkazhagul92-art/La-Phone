@@ -627,7 +627,7 @@ function adminCompare(){
   document.getElementById('main').innerHTML=`<div class="section-label">Выручка точек</div><div class="chart-card">${d.map(x=>`<div class="compare-row"><div class="compare-name">${x.name}</div><div class="compare-bar-track"><div class="compare-bar-fill" style="width:${Math.max(x.rev/mr*100,18)}%;background:${co[x.cls]};">${Math.round(x.rev/1000)}к</div></div></div>`).join('')}</div><div class="section-label">Кол-во продаж</div><div class="chart-card">${d.map(x=>`<div class="compare-row"><div class="compare-name">${x.name}</div><div class="compare-bar-track"><div class="compare-bar-fill" style="width:${Math.max(x.cnt/mc*100,18)}%;background:${co[x.cls]};">${x.cnt}</div></div></div>`).join('')}</div>`;
 }
 
-function adminStock(){renderFullStock('admin');if(cloudMode&&sb){loadFromCloud().then(()=>renderStockList());}}
+function adminStock(){if(cloudMode&&sb){loadFromCloud().then(()=>renderFullStock('admin'));}else{renderFullStock('admin');}}
 
 // ==================== АНАЛИТИКА ====================
 function adminAnalytics(){if(cloudMode&&sb){loadFromCloud();}
@@ -1039,7 +1039,7 @@ async function saveIntake(imei){
 // СКЛАД СЕТИ — продавец видит ВСЕ телефоны всех точек
 let stockFilter='all';
 let cart=[]; // корзина для продажи нескольких телефонов
-function sellerStock(){renderFullStock('seller');if(cloudMode&&sb){loadFromCloud().then(()=>renderStockList());}}
+function sellerStock(){if(cloudMode&&sb){loadFromCloud().then(()=>renderFullStock('seller'));}else{renderFullStock('seller');}}
 
 function renderFullStock(mode){
   const main=document.getElementById('main');
