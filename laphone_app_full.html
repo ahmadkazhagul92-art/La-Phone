@@ -10,6 +10,7 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html5-qrcode/2.3.8/html5-qrcode.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Space+Grotesk:wght@500;600;700;800&display=swap');
 *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
@@ -167,7 +168,7 @@ body{color:var(--white);font-family:'Inter',sans-serif;overflow-x:hidden;}
 .in{background:#22C55E22;color:var(--green);}.out{background:#EF444422;color:var(--red);}
 .mine{background:var(--accent);color:#000;font-weight:700;}
 
-.modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.85);z-index:100;align-items:flex-end;}
+.modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.85);z-index:1500;align-items:flex-end;}
 .modal-overlay.open{display:flex;}
 .modal{background:var(--surface);border-radius:24px 24px 0 0;padding:8px 18px calc(28px + var(--safe-bottom));width:100%;max-height:90vh;overflow-y:auto;animation:slideUp 0.3s;}
 @keyframes slideUp{from{transform:translateY(100%);}to{transform:translateY(0);}}
@@ -284,11 +285,11 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:22px;heigh
   <div class="login-tag">Система управления</div>
   <div class="login-card">
     <div class="login-title">Кто заходит?</div>
-    <div style="text-align:center;font-size:10px;color:#666;margin-bottom:10px;">ВЕРСИЯ: 30.06-CDN-ИСПРАВЛЕН</div>
-    <div class="login-sub">Нажми на себя — войдёшь сразу</div>
+    
+    <div class="login-sub">Выбери себя и введи пароль</div>
 
     <div style="display:flex;flex-direction:column;gap:10px;" id="login-buttons"></div>
-    <div class="login-hint">Пароль можно поменять в настройках</div>
+    <div class="login-hint">Пароль можно поменять иконкой 🔒 в шапке после входа</div>
   </div>
 </div>
 
@@ -296,7 +297,7 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:22px;heigh
 <div class="app" id="app">
   <div class="navbar">
     <div><div class="nav-logo">La<span>Phone</span></div><div class="nav-sub" id="nav-sub">—</div></div>
-    <div class="nav-user"><div class="nav-badge" id="nav-badge">—</div><div class="nav-logout" onclick="logout()">⏻</div></div>
+    <div class="nav-user"><div class="nav-badge" id="nav-badge">—</div><div class="nav-logout" onclick="changeMyPasswordForm()" style="font-size:16px;">🔒</div><div class="nav-logout" onclick="logout()">⏻</div></div>
   </div>
   <div class="tabs" id="tabs"></div>
   <div class="main" id="main"></div>
@@ -322,6 +323,7 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:22px;heigh
 //
 const SUPABASE_URL = 'https://zafnvzhnrxjggpbmcpdb.supabase.co';
 const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InphZm52emhucnhqZ2dwYm1jcGRiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODI3MTc4MzAsImV4cCI6MjA5ODI5MzgzMH0.KADWU3gkOL-4fYYQee0fgbAce7a4N2ClOx9RoWkU-Wc';
+const PHOTOS_BUCKET = 'phone-photos';
 //
 //  Пока ключи пустые — работает локально на этом устройстве.
 //  Как вставишь ключи — автоматически синхронизируется
@@ -330,15 +332,22 @@ const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZ
 
 // ПОЛЬЗОВАТЕЛИ (в реальном приложении — в облаке с хешами паролей)
 const DEFAULT_USERS = {
-  owner:   {pass:'admin', role:'admin', name:'Артём', point:null},
-  daniyar: {pass:'1234', role:'seller', name:'Данияр', point:'p1'},
-  aigerim: {pass:'1234', role:'seller', name:'Айгерим', point:'p2'},
-  erlan:   {pass:'1234', role:'seller', name:'Ерлан', point:'p3'},
+  owner:   {role:'admin', name:'Артём', point:null},
+  daniyar: {role:'seller', name:'Бутик 2', point:'p1'},
+  aigerim: {role:'seller', name:'Бутик 24', point:'p2'},
+  erlan:   {role:'seller', name:'Бутик 80', point:'p3'},
+};
+// Почта для входа в Supabase Auth — привязана к логину, не обязательно настоящая
+const AUTH_EMAILS = {
+  owner:'owner@laphone.local',
+  daniyar:'butik2@laphone.local',
+  aigerim:'butik24@laphone.local',
+  erlan:'butik80@laphone.local',
 };
 const DEFAULT_POINTS = [
-  {id:'p1', name:'Точка 1 · Сотовый Мир', seller:'Данияр', cls:'p1', target:500000},
-  {id:'p2', name:'Точка 2 · Вход', seller:'Айгерим', cls:'p2', target:450000},
-  {id:'p3', name:'Точка 3 · Bay Bars', seller:'Ерлан', cls:'p3', target:400000},
+  {id:'p1', name:'Точка 1 · Сотовый Мир', seller:'Бутик 2', cls:'p1', target:500000, owner:'me'},
+  {id:'p2', name:'Точка 2 · Вход', seller:'Бутик 24', cls:'p2', target:450000, owner:'me'},
+  {id:'p3', name:'Точка 3 · Bay Bars', seller:'Бутик 80', cls:'p3', target:400000, owner:'me'},
 ];
 
 // Загружаем настройки из памяти (имена и пароли можно менять)
@@ -376,6 +385,7 @@ let sb = null; window._sb = null;
 let cloudMode = false;
 let currentUser = null;
 let DB = {products:[], sales:[]};
+let tabToken = 0; // защита от гонки: старая вкладка не должна перерисовать новую
 
 // ==================== ОБЛАКО ====================
 async function initCloud(){
@@ -411,39 +421,42 @@ function loadDBSync(){
   if(cloudMode && sb){ loadFromCloud(); }
 }
 
-async function loadFromCloud(){
-  try{
-    const {data:products} = await sb.from('products').select('*');
-    const {data:sales} = await sb.from('sales').select('*');
-    if(products){ DB.products = products; }
-    if(sales){ DB.sales = sales; }
-    await loadSettingsFromCloud();
-  }catch(e){ console.log('cloud load error',e); }
+function withTimeout(promise, ms=5000){
+  return Promise.race([promise, new Promise((_,reject)=>setTimeout(()=>reject(new Error('timeout '+ms+'ms')),ms))]);
 }
 
-async function loadDB(){
-  loadDBSync();
+async function loadFromCloud(){
+  try{
+    await Promise.race([
+      (async()=>{
+        const {data:products} = await sb.from('products').select('*');
+        const {data:sales} = await sb.from('sales').select('*');
+        if(products){ DB.products = products; }
+        if(sales){ DB.sales = sales; }
+        await loadSettingsFromCloud();
+      })(),
+      new Promise((_,reject)=>setTimeout(()=>reject(new Error('cloud timeout 6s')),6000))
+    ]);
+  }catch(e){ console.log('cloud load error',e); showToast('⚠️ Облако не ответило — показаны сохранённые данные',true); }
 }
 
 function defaultProducts(){ return []; }
 function defaultSales(){ return []; }
 
 
-async function seedCloud(){
-  const products = defaultProducts();
-  const sales = defaultSales();
-  await sb.from('products').insert(products);
-  await sb.from('sales').insert(sales);
-  DB.products = products;
-  DB.sales = sales;
-}
-
 function saveLocal(){
   try{
-    // Фото/видео не храним в localStorage (переполнят лимит 5-10МБ) — только в облаке
+    // Ссылки на фото (http...) — короткие строки, их храним спокойно.
+    // Если фото так и остались base64 (офлайн/ошибка загрузки) — не храним, переполнят лимit 5-10МБ.
     const lightProducts=DB.products.map(p=>{
-      const {photos,video,...rest}=p;
-      return {...rest, hasPhotos:!!(photos&&photos.length), photos:undefined, video:undefined};
+      const photosAreUrls = p.photos && p.photos.length && typeof p.photos[0]==='string' && p.photos[0].startsWith('http');
+      const videoIsUrl = p.video && typeof p.video==='string' && p.video.startsWith('http');
+      return {
+        ...p,
+        hasPhotos: !!(p.photos && p.photos.length),
+        photos: photosAreUrls ? p.photos : undefined,
+        video: videoIsUrl ? p.video : undefined
+      };
     });
     localStorage.setItem('lp_products',JSON.stringify(lightProducts));
     localStorage.setItem('lp_sales',JSON.stringify(DB.sales));
@@ -451,31 +464,6 @@ function saveLocal(){
     // Переполнение — чистим и сохраняем только продажи
     try{localStorage.setItem('lp_sales',JSON.stringify(DB.sales));}catch(_){}
     if(typeof showToast==='function')showToast('⚠️ Память заполнена — подключи облако',true);
-  }
-}
-
-async function cloudSell(product, payment){
-  product.sold = true;
-  const sale = {
-    id:'S'+Date.now(),
-    point:currentUser.point||product.point,
-    seller:currentUser.name,
-    model:product.model+' '+product.storage,
-    sell_price:product.sell_price,
-    buy_price:product.buy_price,
-    payment,
-    created_at:new Date().toISOString()
-  };
-  DB.sales.push(sale);
-  if(cloudMode && sb){
-    showCloud('syncing','🔄 Сохранение...');
-    try{
-      await sb.from('products').update({sold:true}).eq('id',product.id);
-      await sb.from('sales').insert([sale]);
-      showCloud('online','☁️ Сохранено в облако');
-    }catch(e){ showCloud('offline','📴 Сохранено локально'); }
-  } else {
-    saveLocal();
   }
 }
 
@@ -501,19 +489,100 @@ function renderLoginButtons(){
 }
 
 function quickLogin(userId){
-  const u = USERS[userId];
-  currentUser = {...u, id:userId};
-  startApp();
+  const u=USERS[userId];
+  document.getElementById('modal-body').innerHTML=`
+    <div class="modal-title">🔒 ${u.name}</div>
+    <div class="modal-sub">Введи пароль, чтобы войти</div>
+    <div class="form-group"><input class="form-input" id="login-pass-input" type="password" placeholder="Пароль" autocomplete="current-password"></div>
+    <div id="login-pass-err" style="display:none;color:var(--red);font-size:13px;text-align:center;margin-bottom:10px;">❌ Неверный пароль</div>
+    <div class="modal-actions">
+      <button class="modal-btn primary" id="login-submit-btn" onclick="confirmQuickLogin('${userId}')">Войти</button>
+      <button class="modal-btn secondary" onclick="closeModal()">Отмена</button>
+    </div>`;
+  document.getElementById('modal').classList.add('open');
+  setTimeout(()=>{
+    const inp=document.getElementById('login-pass-input');
+    if(inp){
+      inp.focus();
+      inp.onkeydown=(e)=>{ if(e.key==='Enter') confirmQuickLogin(userId); };
+    }
+  },150);
 }
 
-function logout(){
+async function confirmQuickLogin(userId){
+  const u=USERS[userId];
+  const entered=document.getElementById('login-pass-input').value;
+  if(!entered){ return; }
+  if(!cloudMode || !sb){
+    document.getElementById('login-pass-err').textContent='❌ Нет связи с облаком — проверь интернет';
+    document.getElementById('login-pass-err').style.display='block';
+    return;
+  }
+  const btn=document.getElementById('login-submit-btn');
+  if(btn){btn.textContent='Проверяю...';btn.disabled=true;}
+  try{
+    const {data,error} = await withTimeout(sb.auth.signInWithPassword({email:AUTH_EMAILS[userId], password:entered}), 6000);
+    if(error || !data?.session){
+      document.getElementById('login-pass-err').textContent='❌ Неверный пароль';
+      document.getElementById('login-pass-err').style.display='block';
+      if(navigator.vibrate)navigator.vibrate(200);
+      const inp=document.getElementById('login-pass-input');
+      inp.value='';inp.focus();
+      if(btn){btn.textContent='Войти';btn.disabled=false;}
+      return;
+    }
+    currentUser={...u,id:userId};
+    closeModal();
+    startApp();
+  }catch(e){
+    document.getElementById('login-pass-err').textContent='⚠️ Не удалось проверить пароль — попробуй ещё раз';
+    document.getElementById('login-pass-err').style.display='block';
+    if(btn){btn.textContent='Войти';btn.disabled=false;}
+  }
+}
+
+async function logout(){
   currentUser=null;
   cart=[];
   if(typeof stopScanner==='function')stopScanner();
   const fab=document.getElementById('cart-fab');if(fab)fab.remove();
+  if(cloudMode&&sb){ try{ await withTimeout(sb.auth.signOut(), 6000); }catch(e){} }
   document.getElementById('app').classList.remove('active');
   document.getElementById('login').style.display='flex';
   renderLoginButtons();
+}
+
+function changeMyPasswordForm(){
+  if(!currentUser){return;}
+  document.getElementById('modal-body').innerHTML=`
+    <div class="modal-title">🔒 Сменить пароль</div>
+    <div class="modal-sub">${currentUser.name}</div>
+    <div class="form-group"><label class="form-label">Новый пароль</label><input class="form-input" id="new-pass-1" type="password" placeholder="Минимум 6 символов" autocomplete="new-password"></div>
+    <div class="form-group"><label class="form-label">Повтори новый пароль</label><input class="form-input" id="new-pass-2" type="password" placeholder="Ещё раз" autocomplete="new-password"></div>
+    <div id="new-pass-err" style="display:none;color:var(--red);font-size:13px;text-align:center;margin-bottom:10px;"></div>
+    <div class="modal-actions">
+      <button class="modal-btn primary" onclick="confirmChangeMyPassword()">✅ Сохранить новый пароль</button>
+      <button class="modal-btn secondary" onclick="closeModal()">Отмена</button>
+    </div>`;
+  document.getElementById('modal').classList.add('open');
+}
+
+async function confirmChangeMyPassword(){
+  const p1=document.getElementById('new-pass-1').value;
+  const p2=document.getElementById('new-pass-2').value;
+  const errEl=document.getElementById('new-pass-err');
+  if(p1.length<6){ errEl.textContent='⚠️ Пароль должен быть минимум 6 символов'; errEl.style.display='block'; return; }
+  if(p1!==p2){ errEl.textContent='⚠️ Пароли не совпадают'; errEl.style.display='block'; return; }
+  if(!cloudMode||!sb){ errEl.textContent='⚠️ Нет связи с облаком — попробуй позже'; errEl.style.display='block'; return; }
+  try{
+    const {error} = await withTimeout(sb.auth.updateUser({password:p1}), 6000);
+    if(error){ errEl.textContent='❌ '+error.message; errEl.style.display='block'; return; }
+    closeModal();
+    showToast('✅ Пароль изменён');
+  }catch(e){
+    errEl.textContent='⚠️ Не удалось сменить пароль — попробуй ещё раз';
+    errEl.style.display='block';
+  }
 }
 
 function startApp(){
@@ -537,6 +606,41 @@ function startApp(){
 
 function fmt(n){return (n||0).toLocaleString('ru-RU')+' ₸';}
 
+// Разбивает сумму продажи по факту оплаты (нал/Kaspi/рассрочка) — учитывает Смешанную оплату
+function splitSaleByMethod(sale){
+  if(sale.payment==='Наличные') return {cash:sale.sell_price, kaspi:0, inst:0};
+  if(sale.payment==='Kaspi') return {cash:0, kaspi:sale.sell_price, inst:0};
+  if(sale.payment==='Рассрочка') return {cash:0, kaspi:0, inst:sale.sell_price};
+  if(sale.payment==='Смешанная'){
+    const r={cash:0,kaspi:0,inst:0};
+    if(sale.mixed_upfront_type==='Наличные') r.cash+=(sale.mixed_upfront_amount||0);
+    else r.kaspi+=(sale.mixed_upfront_amount||0);
+    if(sale.mixed_remainder_is_installment) r.inst+=(sale.mixed_remainder||0);
+    else if(sale.mixed_remainder_type==='Наличные') r.cash+=(sale.mixed_remainder||0);
+    else r.kaspi+=(sale.mixed_remainder||0);
+    return r;
+  }
+  if(sale.payment==='Трейд-ин') return {cash:sale.doplata!=null?sale.doplata:sale.sell_price, kaspi:0, inst:0};
+  // Прочее (на всякий случай, если появится новый тип оплаты) — считаем как наличные
+  return {cash:sale.sell_price, kaspi:0, inst:0};
+}
+// Является ли продажа хоть частично "в рассрочку" — для налога 3%
+function isInstallmentTaxable(sale){
+  return sale.payment==='Рассрочка' || (sale.payment==='Смешанная' && sale.mixed_remainder_is_installment);
+}
+// Сумма, которая реально пошла в рассрочку (для Смешанной — только остаток, не вся цена телефона)
+function getInstallmentBase(sale){
+  if(sale.payment==='Рассрочка') return sale.sell_price;
+  if(sale.payment==='Смешанная' && sale.mixed_remainder_is_installment) return sale.mixed_remainder||0;
+  return 0;
+}
+// Сумма с накруткой банка (база для налога)
+function getInstallmentWithMarkup(sale){
+  if(sale.payment==='Рассрочка') return sale.inst_total||Math.round(sale.sell_price*1.21);
+  if(sale.payment==='Смешанная' && sale.mixed_remainder_is_installment) return sale.mixed_inst_total||Math.round((sale.mixed_remainder||0)*1.21);
+  return 0;
+}
+
 // ==================== ADMIN ====================
 function buildAdminTabs(){
   document.getElementById('tabs').innerHTML=`
@@ -556,15 +660,18 @@ function adminTab(name,el){
   ({overview:adminOverview,analytics:adminAnalytics,points:adminPoints,rating:adminRating,compare:adminCompare,clients:adminClients,finance:adminFinance,stock:adminStock,settings:adminSettings})[name]();
 }
 
-function adminOverview(){
-  if(cloudMode&&sb){loadFromCloud();}
-  const s=DB.sales.filter(x=>!x.returned);
+async function adminOverview(){
+  const _t=++tabToken; if(cloudMode&&sb){await loadFromCloud(); if(_t!==tabToken)return;}
+  const s=DB.sales.filter(x=>!x.returned && isToday(x.created_at));
   const rev=s.reduce((a,b)=>a+b.sell_price,0);
   const profit=s.reduce((a,b)=>a+(b.sell_price-b.buy_price),0);
   const stock=DB.products.filter(p=>!p.sold);
-  const cash=s.filter(x=>x.payment==='Наличные');
-  const online=s.filter(x=>x.payment==='Kaspi');
-  const inst=s.filter(x=>x.payment==='Рассрочка');
+  const cashTotal=s.reduce((a,b)=>a+splitSaleByMethod(b).cash,0);
+  const cashCount=s.filter(x=>splitSaleByMethod(x).cash>0).length;
+  const onlineTotal=s.reduce((a,b)=>a+splitSaleByMethod(b).kaspi,0);
+  const onlineCount=s.filter(x=>splitSaleByMethod(x).kaspi>0).length;
+  const instTotal=s.reduce((a,b)=>a+splitSaleByMethod(b).inst,0);
+  const instCount=s.filter(x=>splitSaleByMethod(x).inst>0).length;
   document.getElementById('main').innerHTML=`
     <div class="hero-stat"><div class="hs-label">Выручка всей сети · сегодня</div><div class="hs-value">${fmt(rev)}</div><div class="hs-change">↑ ${s.length} продаж по 3 точкам</div></div>
     <div class="stats-grid">
@@ -575,19 +682,47 @@ function adminOverview(){
     </div>
     <div class="section-label">💵 Разбивка по оплатам</div>
     <div class="payment-breakdown">
-      <div class="pay-card cash"><div class="pay-icon">💵</div><div class="pay-info"><div class="pay-label">Наличными в кассах</div><div class="pay-val">${fmt(cash.reduce((a,b)=>a+b.sell_price,0))}</div><div class="pay-sub">${cash.length} продаж · контроль</div></div></div>
-      <div class="pay-card online"><div class="pay-icon">📱</div><div class="pay-info"><div class="pay-label">Онлайн Kaspi</div><div class="pay-val">${fmt(online.reduce((a,b)=>a+b.sell_price,0))}</div><div class="pay-sub">${online.length} продаж</div></div></div>
-      <div class="pay-card installment"><div class="pay-icon">📅</div><div class="pay-info"><div class="pay-label">Рассрочка</div><div class="pay-val">${fmt(inst.reduce((a,b)=>a+b.sell_price,0))}</div><div class="pay-sub">${inst.length} продаж</div></div></div>
+      <div class="pay-card cash"><div class="pay-icon">💵</div><div class="pay-info"><div class="pay-label">Наличными в кассах</div><div class="pay-val">${fmt(cashTotal)}</div><div class="pay-sub">${cashCount} продаж · контроль</div></div></div>
+      <div class="pay-card online"><div class="pay-icon">📱</div><div class="pay-info"><div class="pay-label">Онлайн Kaspi</div><div class="pay-val">${fmt(onlineTotal)}</div><div class="pay-sub">${onlineCount} продаж</div></div></div>
+      <div class="pay-card installment"><div class="pay-icon">📅</div><div class="pay-info"><div class="pay-label">Рассрочка</div><div class="pay-val">${fmt(instTotal)}</div><div class="pay-sub">${instCount} продаж</div></div></div>
     </div>
     <div class="chart-card"><div class="chart-title">Выручка по точкам</div><div class="bar-chart" id="ov-chart"></div></div>
-    ${DB.sales.filter(x=>x.returned).length?`<div class="section-label">↩️ Возвраты сегодня</div><div class="stat-card" style="border-left:3px solid var(--red);"><div class="stat-card-label">Возвращено телефонов</div><div class="stat-card-val" style="color:var(--red);">${DB.sales.filter(x=>x.returned).length} шт · −${fmt(DB.sales.filter(x=>x.returned).reduce((a,b)=>a+b.sell_price,0))}</div></div>`:''}`;
+    <div class="section-label">💼 Зарплата точек · 10% от маржи · сегодня</div>
+    <div class="payment-breakdown">
+      ${(()=>{
+        let totalToday=0;
+        const rows=POINTS.map(p=>{
+          const ps=s.filter(x=>x.point===p.id);
+          const margin=ps.reduce((a,b)=>a+(b.sell_price-b.buy_price),0);
+          const salary=Math.round(margin*0.10);
+          totalToday+=salary;
+          return `<div class="pay-card" style="border-left-color:var(--accent);"><div class="pay-icon">💼</div><div class="pay-info"><div class="pay-label">${p.name.split('·')[0].trim()} · ${p.seller}</div><div class="pay-val">${fmt(salary)}</div><div class="pay-sub">маржа сегодня ${fmt(margin)} · ${ps.length} продаж</div></div></div>`;
+        }).join('');
+        return rows + `<div class="pay-card" style="border-left-color:var(--gold);background:var(--surface2);"><div class="pay-icon">🏆</div><div class="pay-info"><div class="pay-label">Итого по 3 точкам · сегодня</div><div class="pay-val" style="color:var(--gold);">${fmt(totalToday)}</div></div></div>`;
+      })()}
+    </div>
+    <div style="font-size:11px;color:var(--gray2);text-align:center;margin-bottom:14px;">Копится каждый день · итог за месяц смотри во вкладке "Финансы"</div>
+    ${(()=>{
+      const taxByOwner=(owner)=>{
+        const pointIds=POINTS.filter(p=>(p.owner||'me')===owner).map(p=>p.id);
+        const inst=s.filter(x=>isInstallmentTaxable(x) && pointIds.includes(x.point));
+        const tax=inst.reduce((a,b)=>a+(b.installment_tax!=null?b.installment_tax:Math.round((b.inst_total||Math.round(b.sell_price*1.21))*0.03)),0);
+        return {inst,tax};
+      };
+      const mine=taxByOwner('me'), partner=taxByOwner('partner');
+      const hasPartner=POINTS.some(p=>(p.owner||'me')==='partner');
+      return `<div class="section-label">🧾 Налог с рассрочки · 3% от суммы с накруткой · сегодня</div>
+      <div class="stat-card" style="border-left:3px solid var(--orange);margin-bottom:${hasPartner?'10px':'14px'};"><div class="stat-card-label">👑 Мой налог сегодня</div><div class="stat-card-val" style="color:var(--orange);">${fmt(mine.tax)}</div><div class="stat-card-sub">${mine.inst.length} продаж в рассрочку · только мои точки</div></div>
+      ${hasPartner?`<div class="stat-card" style="border-left:3px solid var(--blue);margin-bottom:14px;"><div class="stat-card-label">🤝 Налог партнёра сегодня</div><div class="stat-card-val" style="color:var(--blue);">${fmt(partner.tax)}</div><div class="stat-card-sub">${partner.inst.length} продаж в рассрочку · его точки</div></div>`:''}`;
+    })()}
+    ${DB.sales.filter(x=>x.returned && isToday(x.return_date||x.created_at)).length?`<div class="section-label">↩️ Возвраты сегодня</div><div class="stat-card" style="border-left:3px solid var(--red);"><div class="stat-card-label">Возвращено телефонов</div><div class="stat-card-val" style="color:var(--red);">${DB.sales.filter(x=>x.returned && isToday(x.return_date||x.created_at)).length} шт · −${fmt(DB.sales.filter(x=>x.returned && isToday(x.return_date||x.created_at)).reduce((a,b)=>a+b.sell_price,0))}</div></div>`:''}`;
   const bp=POINTS.map(p=>({name:p.name.split('·')[0].trim(),cls:p.cls,rev:s.filter(x=>x.point===p.id).reduce((a,b)=>a+b.sell_price,0)}));
   const mx=Math.max(...bp.map(x=>x.rev),1);const co={p1:'var(--accent)',p2:'var(--blue)',p3:'var(--purple)'};
   document.getElementById('ov-chart').innerHTML=bp.map(p=>`<div class="bar-col"><div class="bar-val">${Math.round(p.rev/1000)}к</div><div class="bar" style="height:${(p.rev/mx)*100}%;background:${co[p.cls]};"></div><div class="bar-label">${p.name}</div></div>`).join('');
 }
 
-function adminPoints(){if(cloudMode&&sb){loadFromCloud();}
-  const s=DB.sales.filter(x=>!x.returned);
+async function adminPoints(){const _t=++tabToken;if(cloudMode&&sb){await loadFromCloud();if(_t!==tabToken)return;}
+  const s=DB.sales.filter(x=>!x.returned && isToday(x.created_at));
   document.getElementById('main').innerHTML='<div class="section-label">Все точки сети</div>'+POINTS.map(p=>{
     const ps=s.filter(x=>x.point===p.id);const rev=ps.reduce((a,b)=>a+b.sell_price,0);const profit=ps.reduce((a,b)=>a+(b.sell_price-b.buy_price),0);
     const stock=DB.products.filter(x=>x.point===p.id&&!x.sold).length;const pct=Math.min(Math.round(rev/p.target*100),100);
@@ -598,9 +733,9 @@ function adminPoints(){if(cloudMode&&sb){loadFromCloud();}
 
 function adminOpenPoint(id){
   const p=POINTS.find(x=>x.id===id);const ps=DB.sales.filter(s=>s.point===id && !s.returned);
-  const cash=ps.filter(s=>s.payment==='Наличные').reduce((a,b)=>a+b.sell_price,0);
-  const online=ps.filter(s=>s.payment==='Kaspi').reduce((a,b)=>a+b.sell_price,0);
-  const inst=ps.filter(s=>s.payment==='Рассрочка').reduce((a,b)=>a+b.sell_price,0);
+  const cash=ps.reduce((a,b)=>a+splitSaleByMethod(b).cash,0);
+  const online=ps.reduce((a,b)=>a+splitSaleByMethod(b).kaspi,0);
+  const inst=ps.reduce((a,b)=>a+splitSaleByMethod(b).inst,0);
   document.getElementById('modal-body').innerHTML=`<div class="modal-title">${p.name}</div><div class="modal-sub">Продавец: ${p.seller}</div>
     <div class="section-label" style="margin-top:0;">💵 Инкассация</div>
     <div class="payment-breakdown">
@@ -613,24 +748,25 @@ function adminOpenPoint(id){
   document.getElementById('modal').classList.add('open');
 }
 
-function adminRating(){if(cloudMode&&sb){loadFromCloud();}
+async function adminRating(){const _t=++tabToken;if(cloudMode&&sb){await loadFromCloud();if(_t!==tabToken)return;}
   const bs={};POINTS.forEach(p=>bs[p.seller]={name:p.seller,point:p.name.split('·')[0].trim(),rev:0,count:0});
-  DB.sales.filter(x=>!x.returned).forEach(s=>{if(bs[s.seller]){bs[s.seller].rev+=s.sell_price;bs[s.seller].count++;}});
+  DB.sales.filter(x=>!x.returned && isToday(x.created_at)).forEach(s=>{if(bs[s.seller]){bs[s.seller].rev+=s.sell_price;bs[s.seller].count++;}});
   const r=Object.values(bs).sort((a,b)=>b.rev-a.rev);const m=['rank-1','rank-2','rank-3'];
   document.getElementById('main').innerHTML='<div class="section-label">Рейтинг продавцов · сегодня</div>'+r.map((x,i)=>`<div class="rank-item"><div class="rank-medal ${m[i]||'rank-other'}">${i+1}</div><div class="rank-info"><div class="rank-name">${x.name}</div><div class="rank-point">${x.point}</div></div><div><div class="rank-revenue">${fmt(x.rev)}</div><div class="rank-count">${x.count} продаж</div></div></div>`).join('');
 }
 
-function adminCompare(){
+async function adminCompare(){
+  const _t=++tabToken; if(cloudMode&&sb){await loadFromCloud(); if(_t!==tabToken)return;}
   const s=DB.sales.filter(x=>!x.returned);const co={p1:'var(--accent)',p2:'var(--blue)',p3:'var(--purple)'};
   const d=POINTS.map(p=>({name:p.name.split('·')[0].trim(),cls:p.cls,rev:s.filter(x=>x.point===p.id).reduce((a,b)=>a+b.sell_price,0),cnt:s.filter(x=>x.point===p.id).length}));
   const mr=Math.max(...d.map(x=>x.rev),1);const mc=Math.max(...d.map(x=>x.cnt),1);
   document.getElementById('main').innerHTML=`<div class="section-label">Выручка точек</div><div class="chart-card">${d.map(x=>`<div class="compare-row"><div class="compare-name">${x.name}</div><div class="compare-bar-track"><div class="compare-bar-fill" style="width:${Math.max(x.rev/mr*100,18)}%;background:${co[x.cls]};">${Math.round(x.rev/1000)}к</div></div></div>`).join('')}</div><div class="section-label">Кол-во продаж</div><div class="chart-card">${d.map(x=>`<div class="compare-row"><div class="compare-name">${x.name}</div><div class="compare-bar-track"><div class="compare-bar-fill" style="width:${Math.max(x.cnt/mc*100,18)}%;background:${co[x.cls]};">${x.cnt}</div></div></div>`).join('')}</div>`;
 }
 
-function adminStock(){if(cloudMode&&sb){loadFromCloud().then(()=>renderFullStock('admin'));}else{renderFullStock('admin');}}
+function adminStock(){const _t=++tabToken;renderFullStock('admin');if(cloudMode&&sb){loadFromCloud().then(()=>{if(_t===tabToken)renderFullStock('admin');});}}
 
 // ==================== АНАЛИТИКА ====================
-function adminAnalytics(){if(cloudMode&&sb){loadFromCloud();}
+async function adminAnalytics(){const _t=++tabToken;if(cloudMode&&sb){await loadFromCloud();if(_t!==tabToken)return;}
   const s=DB.sales.filter(x=>!x.returned);
   // Топ моделей по продажам
   const byModel={};
@@ -692,7 +828,7 @@ function getClients(){
   return Object.values(clients).sort((a,b)=>b.total-a.total);
 }
 
-function adminClients(){if(cloudMode&&sb){loadFromCloud();}
+async function adminClients(){const _t=++tabToken;if(cloudMode&&sb){await loadFromCloud();if(_t!==tabToken)return;}
   const clients=getClients();
   document.getElementById('main').innerHTML=`
     <div class="stats-grid">
@@ -751,22 +887,29 @@ function openClient(key){
 }
 
 // ==================== ФИНАНСЫ ====================
-function getExpenses(){
-  return JSON.parse(localStorage.getItem('lp_expenses')||'null')||{rent:300000,salary:700000,ads:50000,utilities:40000,other:30000};
-}
-function saveExpenses(e){localStorage.setItem('lp_expenses',JSON.stringify(e));}
-
-function adminFinance(){if(cloudMode&&sb){loadFromCloud();}
-  const s=DB.sales.filter(x=>!x.returned);
+async function adminFinance(){const _t=++tabToken;if(cloudMode&&sb){await loadFromCloud();if(_t!==tabToken)return;}
+  const s=DB.sales.filter(x=>!x.returned && isToday(x.created_at));
   const revenue=s.reduce((a,b)=>a+b.sell_price,0);
   const grossProfit=s.reduce((a,b)=>a+(b.sell_price-b.buy_price),0);
-  const exp=getExpenses();
-  const totalExp=exp.rent+exp.salary+exp.ads+exp.utilities+exp.other;
-  // Прибыль за сегодня минус доля расходов (месячные/30)
-  const dailyExp=Math.round(totalExp/30);
+
+  // Считаем зарплаты точек один раз — используем и в расходах, и в блоке зарплат ниже
+  let salaryTotalToday=0, salaryTotalMonth=0;
+  const pointSalaries=POINTS.map(p=>{
+    const psMonth=DB.sales.filter(x=>x.point===p.id && !x.returned && isThisMonth(x.created_at));
+    const marginMonth=psMonth.reduce((a,b)=>a+(b.sell_price-b.buy_price),0);
+    const salaryMonth=Math.round(marginMonth*0.10);
+    const psToday=DB.sales.filter(x=>x.point===p.id && !x.returned && isToday(x.created_at));
+    const marginToday=psToday.reduce((a,b)=>a+(b.sell_price-b.buy_price),0);
+    const salaryToday=Math.round(marginToday*0.10);
+    salaryTotalToday+=salaryToday; salaryTotalMonth+=salaryMonth;
+    return {p,psMonth,salaryMonth,psToday,salaryToday};
+  });
+
+  const totalExp=salaryTotalMonth; // ФОТ автоматически = сумма зарплат точек за текущий месяц
+  const dailyExp=salaryTotalToday; // расход "сегодня" — реальная зарплата, начисленная сегодня
   const netToday=grossProfit-dailyExp;
   document.getElementById('main').innerHTML=`
-    <div class="hero-stat"><div class="hs-label">Чистая прибыль сегодня</div><div class="hs-value" style="color:${netToday>=0?'var(--accent)':'var(--red)'}">${netToday>=0?'+':''}${fmt(netToday)}</div><div class="hs-change">Валовая ${fmt(grossProfit)} − расходы ${fmt(dailyExp)}/день</div></div>
+    <div class="hero-stat"><div class="hs-label">Чистая прибыль сегодня</div><div class="hs-value" style="color:${netToday>=0?'var(--accent)':'var(--red)'}">${netToday>=0?'+':''}${fmt(netToday)}</div><div class="hs-change">Валовая ${fmt(grossProfit)} − зарплаты сегодня ${fmt(dailyExp)}</div></div>
 
     <div class="section-label">💰 Доходы сегодня</div>
     <div class="stats-grid">
@@ -774,42 +917,106 @@ function adminFinance(){if(cloudMode&&sb){loadFromCloud();}
       <div class="stat-card"><div class="stat-card-label">Валовая прибыль</div><div class="stat-card-val green">${fmt(grossProfit)}</div></div>
     </div>
 
-    <div class="section-label">📉 Расходы в месяц</div>
+    <div class="section-label">📉 Расходы · ФОТ (авто)</div>
     <div class="intake-section">
-      <div class="form-group"><label class="form-label">🏠 Аренда</label><input class="form-input" id="ex-rent" type="number" value="${exp.rent}" inputmode="numeric"></div>
-      <div class="form-group"><label class="form-label">👥 Зарплата</label><input class="form-input" id="ex-salary" type="number" value="${exp.salary}" inputmode="numeric"></div>
-      <div class="form-group"><label class="form-label">📣 Реклама</label><input class="form-input" id="ex-ads" type="number" value="${exp.ads}" inputmode="numeric"></div>
-      <div class="form-group"><label class="form-label">💡 Коммуналка</label><input class="form-input" id="ex-utilities" type="number" value="${exp.utilities}" inputmode="numeric"></div>
-      <div class="form-group"><label class="form-label">📦 Прочее</label><input class="form-input" id="ex-other" type="number" value="${exp.other}" inputmode="numeric"></div>
-      <button class="modal-btn primary" style="width:100%;" onclick="saveExpensesForm()">💾 Сохранить расходы</button>
+      <div class="detail-rows">
+        <div class="detail-row"><div class="detail-key">Зарплаты сегодня</div><div class="detail-val" style="color:var(--red);">−${fmt(dailyExp)}</div></div>
+        <div class="detail-row"><div class="detail-key">Зарплаты с начала месяца</div><div class="detail-val" style="color:var(--red);">−${fmt(totalExp)}</div></div>
+      </div>
+      <div style="font-size:11px;color:var(--gray2);text-align:center;margin-top:10px;line-height:1.5;">Считается автоматически из реальных продаж по точкам (10% от маржи) — ручной ввод не нужен.</div>
     </div>
 
     <div class="section-label">📊 Итого за месяц (расчёт)</div>
     <div class="intake-section">
       <div class="detail-rows">
-        <div class="detail-row"><div class="detail-key">Расходы всего</div><div class="detail-val" style="color:var(--red);">−${fmt(totalExp)}</div></div>
+        <div class="detail-row"><div class="detail-key">Расходы всего (ФОТ)</div><div class="detail-val" style="color:var(--red);">−${fmt(totalExp)}</div></div>
         <div class="detail-row"><div class="detail-key">Прогноз прибыли (×30 дней)</div><div class="detail-val green">${fmt(grossProfit*30)}</div></div>
         <div class="detail-row"><div class="detail-key">Чистыми в месяц (прогноз)</div><div class="detail-val ${(grossProfit*30-totalExp)>=0?'accent':''}" style="${(grossProfit*30-totalExp)<0?'color:var(--red)':''}">${fmt(grossProfit*30-totalExp)}</div></div>
       </div>
     </div>
+
+    <div class="section-label">👥 Зарплаты точек · 10% от маржи</div>
+    ${pointSalaries.map(({p,psMonth,salaryMonth,psToday,salaryToday})=>{
+      return `<div class="pay-card" style="border-left-color:var(--accent);"><div class="pay-icon">💼</div><div class="pay-info"><div class="pay-label">${p.name.split('·')[0].trim()} · ${p.seller}</div>
+        <div style="display:flex;gap:16px;margin-top:2px;">
+          <div><div style="font-size:10px;color:var(--gray);">СЕГОДНЯ</div><div class="pay-val" style="font-size:17px;">${fmt(salaryToday)}</div></div>
+          <div><div style="font-size:10px;color:var(--gray);">ЗА МЕСЯЦ</div><div class="pay-val" style="font-size:17px;">${fmt(salaryMonth)}</div></div>
+        </div>
+        <div class="pay-sub">${psToday.length} продаж сегодня · ${psMonth.length} за месяц</div></div></div>`;
+    }).join('')}
+    <div class="pay-card" style="border-left-color:var(--gold);background:var(--surface2);"><div class="pay-icon">🏆</div><div class="pay-info"><div class="pay-label">Итого по 3 точкам</div>
+      <div style="display:flex;gap:16px;margin-top:2px;">
+        <div><div style="font-size:10px;color:var(--gray);">СЕГОДНЯ</div><div class="pay-val" style="font-size:19px;color:var(--gold);">${fmt(salaryTotalToday)}</div></div>
+        <div><div style="font-size:10px;color:var(--gray);">ЗА МЕСЯЦ</div><div class="pay-val" style="font-size:19px;color:var(--gold);">${fmt(salaryTotalMonth)}</div></div>
+      </div></div></div>
+    <div style="font-size:11px;color:var(--gray2);text-align:center;margin-bottom:14px;line-height:1.5;">Месяц копится с 1 числа автоматически, сегодня — только текущие сутки.</div>
+
+    <div class="section-label">🧾 Налог с рассрочки · 3% от суммы с накруткой банка</div>
+    ${(()=>{
+      const {start,end,label}=currentHalfYearRange();
+      const hasPartner=POINTS.some(p=>(p.owner||'me')==='partner');
+      const calcTax=(sales)=>sales.reduce((a,b)=>a+(b.installment_tax!=null?b.installment_tax:Math.round((b.inst_total||Math.round(b.sell_price*1.21))*0.03)),0);
+      const breakdown=(owner)=>{
+        const pointIds=POINTS.filter(p=>(p.owner||'me')===owner).map(p=>p.id);
+        const base=DB.sales.filter(x=>isInstallmentTaxable(x) && !x.returned && pointIds.includes(x.point));
+        const instToday=base.filter(x=>isToday(x.created_at));
+        const instMonth=base.filter(x=>isThisMonth(x.created_at));
+        const instHalf=base.filter(x=>inRange(x.created_at,start,end));
+        return {
+          today:{list:instToday,tax:calcTax(instToday)},
+          month:{list:instMonth,tax:calcTax(instMonth)},
+          half:{list:instHalf,tax:calcTax(instHalf),
+            totalGoods:instHalf.reduce((a,b)=>a+getInstallmentBase(b),0),
+            totalWithMarkup:instHalf.reduce((a,b)=>a+getInstallmentWithMarkup(b),0)}
+        };
+      };
+      const renderBlock=(title,d)=>`
+        <div class="stats-grid">
+          <div class="stat-card"><div class="stat-card-label">${title} · сегодня</div><div class="stat-card-val" style="color:var(--orange);">${fmt(d.today.tax)}</div><div class="stat-card-sub">${d.today.list.length} продаж</div></div>
+          <div class="stat-card"><div class="stat-card-label">${title} · за месяц</div><div class="stat-card-val" style="color:var(--orange);">${fmt(d.month.tax)}</div><div class="stat-card-sub">${d.month.list.length} продаж</div></div>
+        </div>
+        <div class="stat-card" style="border-left:3px solid var(--orange);margin-bottom:14px;"><div class="stat-card-label">${title} · ${label}</div><div class="stat-card-val" style="color:var(--orange);">${fmt(d.half.tax)}</div><div class="stat-card-sub">${d.half.list.length} продаж за полугодие</div></div>
+        <div class="intake-section">
+          <div class="detail-rows">
+            <div class="detail-row"><div class="detail-key">Сумма товаров за полугодие (цена за нал)</div><div class="detail-val">${fmt(d.half.totalGoods)}</div></div>
+            <div class="detail-row"><div class="detail-key">Сумма с накруткой банка (база налога)</div><div class="detail-val accent">${fmt(d.half.totalWithMarkup)}</div></div>
+            <div class="detail-row"><div class="detail-key">Налог к уплате за полугодие (3%)</div><div class="detail-val" style="color:var(--orange);">${fmt(d.half.tax)}</div></div>
+          </div>
+        </div>`;
+      let out=`<div style="font-size:12px;color:var(--accent);font-weight:700;margin-bottom:8px;">👑 МОЙ НАЛОГ (мои точки)</div>` + renderBlock('Мой налог',breakdown('me'));
+      if(hasPartner){
+        out+=`<div style="font-size:12px;color:var(--blue);font-weight:700;margin:16px 0 8px;">🤝 НАЛОГ ПАРТНЁРА</div>` + renderBlock('Налог партнёра',breakdown('partner'));
+      }
+      out+=`<div style="font-size:11px;color:var(--gray2);text-align:center;margin-bottom:14px;line-height:1.5;">Считается только с оплат "Рассрочка", от суммы с накруткой банка (нал и Kaspi-перевод не облагаются). Разделено по точкам — кто чья точка меняется во вкладке "Настройки". Полугодие сбрасывается после уплаты раз в 6 месяцев.</div>`;
+      return out;
+    })()}
   `;
 }
 
-function saveExpensesForm(){
-  const e={
-    rent:parseInt(document.getElementById('ex-rent').value)||0,
-    salary:parseInt(document.getElementById('ex-salary').value)||0,
-    ads:parseInt(document.getElementById('ex-ads').value)||0,
-    utilities:parseInt(document.getElementById('ex-utilities').value)||0,
-    other:parseInt(document.getElementById('ex-other').value)||0,
-  };
-  saveExpenses(e);
-  showToast('💾 Расходы сохранены');
-  adminFinance();
+function isToday(dateStr){
+  const d=new Date(dateStr),now=new Date();
+  return d.getFullYear()===now.getFullYear() && d.getMonth()===now.getMonth() && d.getDate()===now.getDate();
+}
+function isThisMonth(dateStr){
+  const d=new Date(dateStr),now=new Date();
+  return d.getFullYear()===now.getFullYear() && d.getMonth()===now.getMonth();
+}
+function currentHalfYearRange(){
+  const now=new Date();
+  const startMonth = now.getMonth()<6 ? 0 : 6;
+  const start=new Date(now.getFullYear(),startMonth,1);
+  const end=new Date(now.getFullYear(),startMonth+6,1);
+  const label = startMonth===0 ? `1 полугодие ${now.getFullYear()}` : `2 полугодие ${now.getFullYear()}`;
+  return {start,end,label};
+}
+function inRange(dateStr,start,end){
+  const d=new Date(dateStr);
+  return d>=start && d<end;
 }
 
 // ==================== НАСТРОЙКИ ====================
 function adminSettings(){
+  ++tabToken; // отменяем висящие перерисовки других вкладок
   const sellerKeys=['daniyar','aigerim','erlan'];
   document.getElementById('main').innerHTML=`
     <div class="section-label" style="margin-top:2px;">⚙️ Управление аккаунтами</div>
@@ -817,22 +1024,37 @@ function adminSettings(){
     <div class="intake-section">
       <div style="font-family:'Space Grotesk',sans-serif;font-size:15px;font-weight:700;margin-bottom:14px;">👑 Владелец</div>
       <div class="form-group"><label class="form-label">Имя</label><input class="form-input" id="set-owner-name" value="${USERS.owner.name}"></div>
-      <div class="form-group"><label class="form-label">Пароль</label><input class="form-input" id="set-owner-pass" value="${USERS.owner.pass}"></div>
+      <div style="font-size:11px;color:var(--gray2);line-height:1.5;">Пароль меняется иконкой 🔒 в шапке приложения — из своего же аккаунта.</div>
     </div>
 
     ${sellerKeys.map((k,i)=>{
       const u=USERS[k];const pt=POINTS.find(p=>p.id===u.point);
+      const owner=pt.owner||'me';
       return `<div class="intake-section">
         <div style="font-family:'Space Grotesk',sans-serif;font-size:15px;font-weight:700;margin-bottom:4px;">🛒 Продавец ${i+1}</div>
         <div style="font-size:11px;color:var(--gray);margin-bottom:14px;">${pt.name}</div>
         <div class="form-group"><label class="form-label">Имя продавца</label><input class="form-input" id="set-${k}-name" value="${u.name}"></div>
-        <div class="form-group"><label class="form-label">Пароль</label><input class="form-input" id="set-${k}-pass" value="${u.pass}"></div>
         <div class="form-group"><label class="form-label">Название точки</label><input class="form-input" id="set-${k}-point" value="${pt.name}"></div>
+        <div class="form-group"><label class="form-label">Чья это точка (для налога)</label>
+          <div class="cond-pills">
+            <div class="cond-pill ${owner==='me'?'active':''}" onclick="setPointOwner('${pt.id}','me',this)">👑 Моя (мой ИП)</div>
+            <div class="cond-pill ${owner==='partner'?'active':''}" onclick="setPointOwner('${pt.id}','partner',this)">🤝 Партнёра</div>
+          </div>
+        </div>
+        <div style="font-size:11px;color:var(--gray2);line-height:1.5;">Пароль продавец меняет сам, зайдя под своим аккаунтом (⚙️ появится только у себя) — владелец пароли других менять из приложения не может, это защита от кражи ключа с GitHub. Забыл пароль — сбрасывается в панели Supabase → Authentication.</div>
       </div>`;
     }).join('')}
 
     <button class="modal-btn primary" style="width:100%;margin-top:8px;" onclick="saveAllSettings()">✅ Сохранить настройки</button>
     <button class="modal-btn secondary" style="width:100%;margin-top:8px;" onclick="resetSettings()">↺ Сбросить к стандартным</button>
+
+    <div class="section-label">💾 Резервная копия</div>
+    <div class="intake-section">
+      <div style="font-size:13px;color:var(--gray);margin-bottom:14px;line-height:1.5;">Скачает весь склад и все продажи в файл на этот телефон. Делай раз в неделю — если что-то случится с облаком, данные останутся у тебя.</div>
+      <button class="modal-btn primary" style="width:100%;" onclick="exportBackup()">💾 Скачать бэкап (склад + продажи)</button>
+      <button class="modal-btn secondary" style="width:100%;margin-top:8px;" onclick="document.getElementById('backup-file-input').click()">📂 Восстановить из бэкапа</button>
+      <input type="file" id="backup-file-input" accept=".json" style="display:none;" onchange="importBackup(this)">
+    </div>
 
     <div class="section-label">⚠️ Опасная зона</div>
     <div class="intake-section" style="border-color:var(--red);">
@@ -869,8 +1091,8 @@ async function confirmClearDemo(){
   saveLocal();
   if(cloudMode&&sb){
     try{
-      await sb.from('sales').delete().neq('id','');
-      await sb.from('products').delete().neq('id','');
+      await withTimeout(sb.from('sales').delete().neq('id',''));
+      await withTimeout(sb.from('products').delete().neq('id',''));
     }catch(e){}
   }
   closeModal();
@@ -878,13 +1100,100 @@ async function confirmClearDemo(){
   adminSettings();
 }
 
+async function exportBackup(){
+  // Перед бэкапом подтягиваем свежие данные из облака, чтобы бэкап был полным
+  if(cloudMode&&sb){ showToast('🔄 Загружаю свежие данные...'); await loadFromCloud(); }
+  const backup={
+    app:'LaPhone',
+    version:1,
+    exported_at:new Date().toISOString(),
+    products:DB.products, // ссылки на фото/видео теперь короткие URL — не вырезаем, они должны сохраняться в бэкапе
+    sales:DB.sales,
+    points:POINTS
+  };
+  const blob=new Blob([JSON.stringify(backup,null,2)],{type:'application/json'});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement('a');
+  const d=new Date();
+  a.href=url;
+  a.download='LaPhone_backup_'+d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0')+'.json';
+  document.body.appendChild(a);a.click();document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+  showToast('💾 Бэкап скачан: '+backup.products.length+' тел. · '+backup.sales.length+' продаж');
+}
+
+function importBackup(input){
+  const file=input.files[0];
+  if(!file)return;
+  const reader=new FileReader();
+  reader.onload=(e)=>{
+    try{
+      const backup=JSON.parse(e.target.result);
+      if(backup.app!=='LaPhone'||!Array.isArray(backup.products)||!Array.isArray(backup.sales)){
+        showToast('❌ Это не файл бэкапа La Phone',true);return;
+      }
+      window._pendingBackup=backup;
+      document.getElementById('modal-body').innerHTML=`
+        <div class="modal-title">📂 Восстановить из бэкапа?</div>
+        <div class="modal-sub">от ${new Date(backup.exported_at).toLocaleString('ru-RU')}</div>
+        <div style="background:#1A1408;border:1px solid #3A2E15;border-radius:12px;padding:14px;margin-bottom:14px;font-size:13px;color:var(--gray);line-height:1.6;">
+          В бэкапе:<br>
+          • Телефонов: <b style="color:var(--white);">${backup.products.length}</b><br>
+          • Продаж: <b style="color:var(--white);">${backup.sales.length}</b><br><br>
+          <b style="color:var(--gold);">Текущие данные будут ПОЛНОСТЬЮ заменены</b> данными из бэкапа — и локально, и в облаке.
+        </div>
+        <div class="modal-actions">
+          <button class="modal-btn" style="background:var(--gold);color:#000;" onclick="confirmImportBackup()">📂 Да, восстановить</button>
+          <button class="modal-btn secondary" onclick="closeModal();window._pendingBackup=null;">Отмена</button>
+        </div>`;
+      document.getElementById('modal').classList.add('open');
+    }catch(err){ showToast('❌ Файл повреждён или не читается',true); }
+    input.value='';
+  };
+  reader.readAsText(file);
+}
+
+async function confirmImportBackup(){
+  const backup=window._pendingBackup;
+  if(!backup)return;
+  DB.products=backup.products;
+  DB.sales=backup.sales;
+  if(backup.points)POINTS=backup.points;
+  saveLocal();
+  saveSettings();
+  if(cloudMode&&sb){
+    showToast('🔄 Загружаю в облако...');
+    try{
+      await withTimeout(sb.from('sales').delete().neq('id',''),15000);
+      await withTimeout(sb.from('products').delete().neq('id',''),15000);
+      // Загружаем порциями по 100 записей, чтобы не упереться в лимиты
+      for(let i=0;i<DB.products.length;i+=100){ await withTimeout(sb.from('products').insert(DB.products.slice(i,i+100)),15000); }
+      for(let i=0;i<DB.sales.length;i+=100){ await withTimeout(sb.from('sales').insert(DB.sales.slice(i,i+100)),15000); }
+      showToast('✅ Восстановлено и загружено в облако');
+    }catch(e){ showToast('⚠️ Восстановлено локально, облако не ответило',true); }
+  }else{
+    showToast('✅ Восстановлено локально');
+  }
+  window._pendingBackup=null;
+  closeModal();
+  adminSettings();
+}
+
+function setPointOwner(pointId,owner,el){
+  const pt=POINTS.find(p=>p.id===pointId);
+  if(!pt)return;
+  pt.owner=owner;
+  el.parentElement.querySelectorAll('.cond-pill').forEach(p=>p.classList.remove('active'));
+  el.classList.add('active');
+  saveSettings();
+  showToast(owner==='me'?'👑 Точка отмечена как своя':'🤝 Точка отмечена как партнёрская');
+}
+
 function saveAllSettings(){
   USERS.owner.name=document.getElementById('set-owner-name').value.trim()||'Артём';
-  USERS.owner.pass=document.getElementById('set-owner-pass').value.trim()||'admin';
   ['daniyar','aigerim','erlan'].forEach(k=>{
     const u=USERS[k];
     const newName=document.getElementById('set-'+k+'-name').value.trim();
-    const newPass=document.getElementById('set-'+k+'-pass').value.trim();
     const newPoint=document.getElementById('set-'+k+'-point').value.trim();
     if(newName){
       const oldName=u.name;
@@ -894,7 +1203,6 @@ function saveAllSettings(){
       if(pt){pt.seller=newName;if(newPoint)pt.name=newPoint;}
       DB.sales.forEach(s=>{if(s.seller===oldName)s.seller=newName;});
     }
-    if(newPass)u.pass=newPass;
   });
   saveSettings();
   saveLocal();
@@ -928,11 +1236,21 @@ function sellerTab(name,el){
 }
 function mySales(){return DB.sales.filter(s=>s.point===currentUser.point);}
 
-function sellerHome(){if(cloudMode&&sb){loadFromCloud();}
-  const s=mySales().filter(x=>!x.returned);const rev=s.reduce((a,b)=>a+b.sell_price,0);
+async function sellerHome(){const _t=++tabToken;if(cloudMode&&sb){await loadFromCloud();if(_t!==tabToken)return;}
+  const s=mySales().filter(x=>!x.returned && isToday(x.created_at));const rev=s.reduce((a,b)=>a+b.sell_price,0);
+  const marginToday=s.reduce((a,b)=>a+(b.sell_price-b.buy_price),0);
+  const earnedToday=Math.round(marginToday*0.10);
+  const sMonth=mySales().filter(x=>!x.returned && isThisMonth(x.created_at));
+  const marginMonth=sMonth.reduce((a,b)=>a+(b.sell_price-b.buy_price),0);
+  const earnedMonth=Math.round(marginMonth*0.10);
   const pt=POINTS.find(p=>p.id===currentUser.point);
   document.getElementById('main').innerHTML=`
     <div class="hero-stat"><div class="hs-label">Моя выручка · сегодня</div><div class="hs-value">${fmt(rev)}</div><div class="hs-change">↑ ${s.length} продаж · ${pt.name.split('·')[0].trim()}</div></div>
+    <div class="stats-grid">
+      <div class="stat-card" style="border-left:3px solid var(--accent);"><div class="stat-card-label">💼 Мой заработок сегодня</div><div class="stat-card-val accent">${fmt(earnedToday)}</div></div>
+      <div class="stat-card" style="border-left:3px solid var(--gold);"><div class="stat-card-label">💼 Заработок за месяц</div><div class="stat-card-val" style="color:var(--gold);">${fmt(earnedMonth)}</div></div>
+    </div>
+    <div style="font-size:11px;color:var(--gray2);text-align:center;margin-bottom:14px;">10% от твоей маржи · обновляется сразу после каждой продажи</div>
     <button class="scan-big" onclick="document.querySelectorAll('.tab')[1].click()"><span class="scan-big-icon">📷</span>Сканировать и принять телефон</button>
     <div class="quick-actions">
       <div class="qa" onclick="document.querySelectorAll('.tab')[2].click()"><div class="qa-icon">📦</div><div class="qa-label">Склад сети</div></div>
@@ -943,11 +1261,12 @@ function sellerHome(){if(cloudMode&&sb){loadFromCloud();}
 }
 
 // ==================== ПРИЁМКА + СКАНЕР ====================
-let scannedIMEI='';let intakePhotos=[];let intakeCondition='Отличное';
-let html5Scanner=null;let scanMode='barcode';let intakeVideoData=null;
+let scannedIMEI='';let intakePhotos=[];let intakePhotoFiles=[];let intakeCondition='Отличное';
+let html5Scanner=null;let scanMode='barcode';let intakeVideoData=null;let intakeVideoFile=null;
 
 function sellerIntake(){
-  scannedIMEI='';intakePhotos=[];intakeCondition='Отличное';intakeVideoData=null;
+  ++tabToken; // отменяем висящие перерисовки других вкладок
+  scannedIMEI='';intakePhotos=[];intakePhotoFiles=[];intakeCondition='Отличное';intakeVideoData=null;intakeVideoFile=null;
   document.getElementById('main').innerHTML=`
     <div class="section-label" style="margin-top:0;">📥 Приёмка телефона на склад</div>
     <div class="scan-mode-tabs">
@@ -977,7 +1296,13 @@ function startScanner(){
     (text)=>{onScanSuccess(text);},()=>{}
   ).catch(()=>{document.getElementById('reader').innerHTML='<div style="padding:40px 20px;text-align:center;color:var(--gray);font-size:13px;">📷 Разреши доступ к камере или вводи IMEI вручную 👇</div>';});
 }
-function stopScanner(){if(html5Scanner){try{html5Scanner.stop().then(()=>{html5Scanner.clear();html5Scanner=null;}).catch(()=>{html5Scanner=null;});}catch(e){html5Scanner=null;}}}
+function stopScanner(){
+  if(html5Scanner){
+    const s=html5Scanner;
+    html5Scanner=null; // сразу освобождаем ссылку — следующий скан не должен ждать асинхронный ответ камеры
+    try{ s.stop().then(()=>{ try{s.clear();}catch(e){} }).catch(()=>{}); }catch(e){}
+  }
+}
 function onScanSuccess(text){
   const d=text.replace(/\D/g,'');
   if(d.length>=14&&d.length<=16){stopScanner();scannedIMEI=d.slice(0,15);showImeiFound(scannedIMEI);if(navigator.vibrate)navigator.vibrate(100);}
@@ -1001,6 +1326,13 @@ function renderIntakeForm(imei){
     <div class="form-group"><label class="form-label">Дефекты</label><textarea class="form-textarea" id="in-defects" placeholder="Царапина на корпусе, скол снизу..."></textarea></div>
     <div class="form-row"><div class="form-group"><label class="form-label">💸 Цена закупа</label><input class="form-input" id="in-buy" placeholder="70000" inputmode="numeric"></div>
       <div class="form-group"><label class="form-label">💰 Цена продажи</label><input class="form-input" id="in-sell" placeholder="87000" inputmode="numeric"></div></div>
+    <div style="background:#1A1408;border:1px solid #3A2E15;border-radius:12px;padding:14px;margin:14px 0;">
+      <div style="font-family:'Space Grotesk',sans-serif;font-size:14px;font-weight:700;color:var(--gold);margin-bottom:4px;">🪪 Данные того, у кого купили телефон</div>
+      <div style="font-size:11px;color:var(--gray);margin-bottom:12px;line-height:1.5;">Обязательно — это твоя защита, если телефон окажется краденым. Записывается один раз и хранится всегда вместе с этим IMEI.</div>
+      <div class="form-group"><label class="form-label">Фамилия Имя продавца</label><input class="form-input" id="in-seller-name" placeholder="Асылбеков Асан"></div>
+      <div class="form-group"><label class="form-label">Номер телефона продавца</label><input class="form-input" id="in-seller-phone" placeholder="+7 701 234 5678" inputmode="tel"></div>
+      <div class="form-group"><label class="form-label">ИИН продавца</label><input class="form-input" id="in-seller-iin" placeholder="123456789012" inputmode="numeric" maxlength="12"></div>
+    </div>
     <div class="form-group"><label class="form-label">📸 Фото и видео</label><div class="photo-row">
       <label class="photo-btn"><input type="file" accept="image/*" capture="environment" multiple onchange="addIntakePhoto(this)"><div class="photo-icon">📸</div><div class="photo-label">Фото</div></label>
       <label class="photo-btn"><input type="file" accept="video/*" capture="environment" onchange="addIntakeVideo(this)"><div class="photo-icon">🎥</div><div class="photo-label">Видео</div></label></div>
@@ -1008,27 +1340,64 @@ function renderIntakeForm(imei){
     <button class="modal-btn primary" style="width:100%;margin-top:8px;" onclick="saveIntake('${imei}')">✅ Принять на склад</button></div>`;
 }
 function setCond(c,el){intakeCondition=c;document.querySelectorAll('#cond-pills .cond-pill').forEach(p=>p.classList.remove('active'));el.classList.add('active');}
-function addIntakePhoto(input){Array.from(input.files).forEach(file=>{if(intakePhotos.length>=8)return;const r=new FileReader();r.onload=e=>{intakePhotos.push(e.target.result);renderIntakePhotos();};r.readAsDataURL(file);});}
-function renderIntakePhotos(){document.getElementById('intake-photos').innerHTML=intakePhotos.map((p,i)=>`<div class="photo-thumb" onclick="intakePhotos.splice(${i},1);renderIntakePhotos();"><img src="${p}"></div>`).join('');}
-function addIntakeVideo(input){const f=input.files[0];if(!f)return;if(f.size>30*1024*1024){showToast('Видео больше 30MB',true);return;}const r=new FileReader();r.onload=e=>{intakeVideoData=e.target.result;document.getElementById('intake-video').innerHTML=`<video src="${e.target.result}" controls style="width:100%;border-radius:10px;margin-top:8px;"></video>`;};r.readAsDataURL(f);}
+function addIntakePhoto(input){Array.from(input.files).forEach(file=>{if(intakePhotos.length>=8)return;intakePhotoFiles.push(file);const r=new FileReader();r.onload=e=>{intakePhotos.push(e.target.result);renderIntakePhotos();};r.readAsDataURL(file);});}
+function renderIntakePhotos(){document.getElementById('intake-photos').innerHTML=intakePhotos.map((p,i)=>`<div class="photo-thumb" onclick="intakePhotos.splice(${i},1);intakePhotoFiles.splice(${i},1);renderIntakePhotos();"><img src="${p}"></div>`).join('');}
+function addIntakeVideo(input){const f=input.files[0];if(!f)return;if(f.size>30*1024*1024){showToast('Видео больше 30MB',true);return;}intakeVideoFile=f;const r=new FileReader();r.onload=e=>{intakeVideoData=e.target.result;document.getElementById('intake-video').innerHTML=`<video src="${e.target.result}" controls style="width:100%;border-radius:10px;margin-top:8px;"></video>`;};r.readAsDataURL(f);}
+
+// Загрузка одного файла в Supabase Storage, возвращает публичную ссылку или null
+async function uploadToStorage(file, path){
+  if(!cloudMode || !sb) return null;
+  try{
+    const r = await withTimeout(sb.storage.from(PHOTOS_BUCKET).upload(path, file, {upsert:true, contentType:file.type}), 6000);
+    if(r.error){ console.error('Storage upload error:', r.error); return null; }
+    const { data } = sb.storage.from(PHOTOS_BUCKET).getPublicUrl(path);
+    return data?.publicUrl || null;
+  }catch(e){ console.error('Storage upload exception:', e); return null; }
+}
 async function saveIntake(imei){
   const model=document.getElementById('in-model').value.trim();
   const sell=parseInt(document.getElementById('in-sell').value)||0;
   const buy=parseInt(document.getElementById('in-buy').value)||0;
+  const sellerName=document.getElementById('in-seller-name').value.trim();
+  const sellerPhone=document.getElementById('in-seller-phone').value.trim();
+  const sellerIin=document.getElementById('in-seller-iin').value.trim();
   if(!model){showToast('⚠️ Укажи модель',true);return;}
   if(!sell){showToast('⚠️ Укажи цену продажи',true);return;}
+  if(!sellerName){showToast('⚠️ Укажи фамилию и имя продавца',true);return;}
+  if(!sellerPhone){showToast('⚠️ Укажи номер телефона продавца',true);return;}
+  if(!sellerIin){showToast('⚠️ Укажи ИИН продавца',true);return;}
+  if(!/^\d{12}$/.test(sellerIin)){showToast('⚠️ ИИН должен быть из 12 цифр, без пробелов и дефисов',true);return;}
   let brand='Другое';const ml=model.toLowerCase();
   if(ml.includes('iphone'))brand='iPhone';else if(ml.includes('samsung'))brand='Samsung';else if(ml.includes('xiaomi')||ml.includes('redmi'))brand='Xiaomi';
-  const np={id:'LP'+Date.now(),point:currentUser.point,model,brand,storage:document.getElementById('in-storage').value,color:document.getElementById('in-color').value||'—',imei,buy_price:buy,sell_price:sell,battery:parseInt(document.getElementById('in-battery').value),condition:intakeCondition,isNew:intakeCondition==='Новый',defects:document.getElementById('in-defects').value||'',photos:intakePhotos,video:intakeVideoData,sold:false,created_at:new Date().toISOString()};
+
+  // Загружаем фото и видео в Supabase Storage параллельно (если облако доступно) — получаем постоянные ссылки
+  let photoUrls=[];let videoUrl=null;
+  if(cloudMode&&sb&&(intakePhotoFiles.length||intakeVideoFile)){
+    showToast('🔄 Загружаю фото/видео...');
+    const photoUploadPromises=intakePhotoFiles.map((file,i)=>{
+      const ext=(file.name.split('.').pop()||'jpg').toLowerCase();
+      return uploadToStorage(file, imei+'/photo_'+i+'_'+Date.now()+'.'+ext);
+    });
+    const videoUploadPromise=intakeVideoFile
+      ? uploadToStorage(intakeVideoFile, imei+'/video_'+Date.now()+'.'+(intakeVideoFile.name.split('.').pop()||'mp4').toLowerCase())
+      : Promise.resolve(null);
+    const [photoResults, videoResult] = await Promise.all([Promise.all(photoUploadPromises), videoUploadPromise]);
+    photoUrls = photoResults.filter(url=>url);
+    videoUrl = videoResult;
+  }
+
+  const np={id:'LP'+Date.now(),point:currentUser.point,model,brand,storage:document.getElementById('in-storage').value,color:document.getElementById('in-color').value||'—',imei,buy_price:buy,sell_price:sell,battery:parseInt(document.getElementById('in-battery').value),condition:intakeCondition,isNew:intakeCondition==='Новый',defects:document.getElementById('in-defects').value||'',seller_name:sellerName,seller_phone:sellerPhone,seller_iin:sellerIin,photos:photoUrls.length?photoUrls:intakePhotos,video:videoUrl||intakeVideoData,sold:false,created_at:new Date().toISOString()};
   DB.products.push(np);
   if(cloudMode&&sb){
     try{
-      const r=await sb.from('products').insert([{...np,photos:undefined,video:undefined}]);
+      // В облако уходят ТОЛЬКО ссылки (photoUrls/videoUrl), не base64 — если загрузка не удалась, поля просто пустые в облаке
+      const cloudProduct={...np, photos:photoUrls, video:videoUrl};
+      const r=await withTimeout(sb.from('products').insert([cloudProduct]));
       if(r.error){showToast('❌ Ошибка облака: '+r.error.message,true);console.error('INSERT ERROR:',r.error);}
       else{showToast('☁️ Телефон сохранён в облако ✅');}
     }catch(e){showToast('❌ Ошибка: '+e.message,true);console.error('INSERT CATCH:',e);}
   } else {
-    showToast('⚠️ Облако: cloudMode='+cloudMode+' sb='+(sb?'ok':'null'),true);
+    showToast('⚠️ Сохранено локально — облако недоступно',true);
   }
   saveLocal();
   showToast('✅ '+model+' принят на склад!');
@@ -1039,7 +1408,7 @@ async function saveIntake(imei){
 // СКЛАД СЕТИ — продавец видит ВСЕ телефоны всех точек
 let stockFilter='all';
 let cart=[]; // корзина для продажи нескольких телефонов
-function sellerStock(){if(cloudMode&&sb){loadFromCloud().then(()=>renderFullStock('seller'));}else{renderFullStock('seller');}}
+function sellerStock(){const _t=++tabToken;renderFullStock('seller');if(cloudMode&&sb){loadFromCloud().then(()=>{if(_t===tabToken)renderFullStock('seller');});}}
 
 function renderFullStock(mode){
   const main=document.getElementById('main');
@@ -1068,19 +1437,31 @@ function filterStock(){renderStockList();}
 
 async function refreshStock(mode){
   if(!cloudMode||!sb){showToast('Облако не подключено');return;}
+  const _t=++tabToken;
   showToast('🔄 Обновляю...');
   await loadFromCloud();
+  if(_t!==tabToken)return; // пользователь уже ушёл на другую вкладку — не перерисовываем поверх неё
   renderFullStock(mode||'seller');
   showToast('✅ Склад обновлён');
 }
 
 function renderStockList(){
   const q=(document.getElementById('stock-search')?.value||'').toLowerCase();
-  let items=DB.products.filter(p=>p.sold!==true);
-  if(stockFilter==='new')items=items.filter(p=>p.isNew);
-  else if(stockFilter==='used')items=items.filter(p=>!p.isNew);
-  else if(stockFilter!=='all')items=items.filter(p=>p.point===stockFilter);
-  if(q)items=items.filter(p=>p.model.toLowerCase().includes(q)||p.imei.includes(q));
+  // Если идёт активный поиск — ищем по ВСЕМ телефонам (включая уже проданные), это нужно
+  // для случая "приходит полиция и спрашивает про телефон, который мы уже продали"
+  let items = q ? DB.products.slice() : DB.products.filter(p=>p.sold!==true);
+  if(!q){
+    if(stockFilter==='new')items=items.filter(p=>p.isNew);
+    else if(stockFilter==='used')items=items.filter(p=>!p.isNew);
+    else if(stockFilter!=='all')items=items.filter(p=>p.point===stockFilter);
+  }
+  if(q)items=items.filter(p=>
+    p.model.toLowerCase().includes(q)||
+    p.imei.includes(q)||
+    (p.seller_name||'').toLowerCase().includes(q)||
+    (p.seller_phone||'').includes(q)||
+    (p.seller_iin||'').includes(q)
+  );
   const list=document.getElementById('stock-list');
   if(items.length===0){list.innerHTML='<div class="empty"><div class="empty-icon">📦</div><div class="empty-text">Ничего не найдено</div></div>';return;}
   const pn=(pid)=>POINTS.find(p=>p.id===pid)?.name||pid;
@@ -1088,8 +1469,8 @@ function renderStockList(){
     const isMine=currentUser.role==='seller'&&p.point===currentUser.point;
     return `<div class="prod-item" onclick="openProduct('${p.id}')">
       <div class="prod-thumb">${p.isNew?'✨':'📱'}</div>
-      <div class="prod-info"><div class="prod-name">${p.model} ${p.storage}${p.isNew?' <span style=\"font-size:9px;background:var(--accent);color:#000;padding:1px 6px;border-radius:10px;font-weight:700;\">NEW</span>':''}</div><div class="prod-meta">🔋${p.battery}% · ${p.condition}</div><div class="prod-point">📍 ${pn(p.point)}${isMine?' · моя точка':''}</div></div>
-      <div class="prod-right"><div class="prod-price">${fmt(p.sell_price)}</div><div class="prod-stock ${isMine?'mine':'in'}">${isMine?'моя точка':'доступен'}</div></div>
+      <div class="prod-info"><div class="prod-name">${p.model} ${p.storage}${p.isNew?' <span style=\"font-size:9px;background:var(--accent);color:#000;padding:1px 6px;border-radius:10px;font-weight:700;\">NEW</span>':''}${p.sold?' <span style=\"font-size:9px;background:var(--red-dim);color:var(--red);padding:1px 6px;border-radius:10px;font-weight:700;\">ПРОДАН</span>':''}</div><div class="prod-meta">🔋${p.battery}% · ${p.condition}${p.seller_name?' · сдал: '+p.seller_name:''}</div><div class="prod-point">📍 ${pn(p.point)}${isMine?' · моя точка':''}</div></div>
+      <div class="prod-right"><div class="prod-price">${fmt(p.sell_price)}</div><div class="prod-stock ${isMine?'mine':'in'}">${p.sold?'продан':(isMine?'моя точка':'доступен')}</div></div>
     </div>`;
   }).join('');
 }
@@ -1112,8 +1493,24 @@ function openProduct(id){
       <div class="detail-row"><div class="detail-key">📈 Маржа</div><div class="detail-val green">+${fmt(p.sell_price-p.buy_price)} (${p.buy_price?Math.round((p.sell_price-p.buy_price)/p.buy_price*100):0}%)</div></div>
     </div>
     ${(p.photos&&p.photos.length)||p.video?`<div class="section-label">Фото и видео</div>${p.photos&&p.photos.length?`<div class="photo-preview">${p.photos.map(ph=>`<div class="photo-thumb" onclick="window.open('${ph}')"><img src="${ph}"></div>`).join('')}</div>`:''}${p.video?`<video src="${p.video}" controls style="width:100%;border-radius:10px;margin-top:8px;"></video>`:''}`:''}
-    ${!isMine&&currentUser.role==='seller'?`<div style="background:#1A1408;border:1px solid #3A2E15;border-radius:10px;padding:10px;margin-top:14px;font-size:12px;color:var(--gold);text-align:center;">📍 Телефон на точке "${pn(p.point).split('·')[0].trim()}" — забери оттуда или договорись о переносе</div>`:''}
-    ${canSell?`<div class="modal-actions"><button class="modal-btn primary" onclick="sellPhone('${p.id}')">💰 Продать сразу</button><button class="modal-btn" style="background:var(--blue-dim);color:var(--blue);border:1px solid var(--blue);" onclick="addToCart('${p.id}')">🛒 В корзину</button></div><button class="modal-btn secondary" style="width:100%;margin-top:8px;" onclick="closeModal()">Закрыть</button>`:
+    ${p.seller_name?`<div class="section-label">🪪 У кого купили телефон</div>
+    <div class="detail-rows">
+      <div class="detail-row"><div class="detail-key">Фамилия Имя</div><div class="detail-val">${p.seller_name}</div></div>
+      <div class="detail-row"><div class="detail-key">Телефон</div><div class="detail-val">${p.seller_phone||'—'}</div></div>
+      <div class="detail-row"><div class="detail-key">ИИН</div><div class="detail-val">${p.seller_iin||'—'}</div></div>
+    </div>`:''}
+    ${p.sold?(()=>{
+      const sale=DB.sales.find(s=>s.passport_id===p.id);
+      return sale?`<div class="section-label">👤 Кому продали</div>
+      <div class="detail-rows">
+        <div class="detail-row"><div class="detail-key">Фамилия Имя</div><div class="detail-val">${sale.client_name||'—'}</div></div>
+        <div class="detail-row"><div class="detail-key">Телефон</div><div class="detail-val">${sale.client_phone||'—'}</div></div>
+        <div class="detail-row"><div class="detail-key">Дата продажи</div><div class="detail-val">${new Date(sale.created_at).toLocaleDateString('ru-RU')}</div></div>
+      </div>`:'';
+    })():''}
+    ${!isMine&&currentUser.role==='seller'&&!p.sold?`<div style="background:#1A1408;border:1px solid #3A2E15;border-radius:10px;padding:10px;margin-top:14px;font-size:12px;color:var(--gold);text-align:center;">📍 Телефон на точке "${pn(p.point).split('·')[0].trim()}" — забери оттуда или договорись о переносе</div>`:''}
+    ${p.sold?`<div style="background:var(--red-dim);border:1px solid var(--red);border-radius:10px;padding:12px;margin-top:14px;font-size:12px;color:var(--red);text-align:center;">🔒 Этот телефон уже продан — найден по поиску для справки (например, по запросу правоохранительных органов)</div><button class="modal-btn secondary" style="width:100%;margin-top:12px;" onclick="closeModal()">Закрыть</button>`:
+      canSell?`<div class="modal-actions"><button class="modal-btn primary" onclick="sellPhone('${p.id}')">💰 Продать сразу</button><button class="modal-btn" style="background:var(--blue-dim);color:var(--blue);border:1px solid var(--blue);" onclick="addToCart('${p.id}')">🛒 В корзину</button></div><button class="modal-btn secondary" style="width:100%;margin-top:8px;" onclick="closeModal()">Закрыть</button>`:
       `<div class="modal-actions"><button class="modal-btn primary" onclick="sellPhone('${p.id}')">💰 Продать</button><button class="modal-btn" style="background:#3B82F620;color:var(--blue);border:1px solid var(--blue);" onclick="editPriceAdmin('${p.id}')">✏️ Цены</button><button class="modal-btn" style="background:var(--red-dim);color:var(--red);border:1px solid var(--red);" onclick="deleteProductAdmin('${p.id}')">🗑</button></div><button class="modal-btn secondary" style="width:100%;margin-top:8px;" onclick="closeModal()">Закрыть</button>`}`;
   document.getElementById('modal').classList.add('open');
 }
@@ -1138,7 +1535,7 @@ function deleteProductAdmin(id){
 async function confirmDelete(id){
   DB.products=DB.products.filter(p=>p.id!==id);
   saveLocal();
-  if(cloudMode&&sb){try{await sb.from('products').delete().eq('id',id);}catch(e){}}
+  if(cloudMode&&sb){try{await withTimeout(sb.from('products').delete().eq('id',id));}catch(e){}}
   closeModal();
   showToast('🗑 Телефон удалён со склада');
   // Перерисовываем склад в зависимости от роли
@@ -1174,7 +1571,7 @@ async function savePriceAdmin(id){
   p.buy_price=parseInt(document.getElementById('ep-buy').value)||p.buy_price;
   p.sell_price=parseInt(document.getElementById('ep-sell').value)||p.sell_price;
   saveLocal();
-  if(cloudMode&&sb){try{await sb.from('products').update({buy_price:p.buy_price,sell_price:p.sell_price}).eq('id',id);}catch(e){}}
+  if(cloudMode&&sb){try{await withTimeout(sb.from('products').update({buy_price:p.buy_price,sell_price:p.sell_price}).eq('id',id));}catch(e){}}
   showToast('💰 Цены обновлены');
   openProduct(id);
 }
@@ -1241,15 +1638,22 @@ function cartCheckout(){
 }
 
 function cartInstallment(){
+  window._cInstPercent=window._cInstPercent||21;
+  renderCartInstallment();
+}
+function renderCartInstallment(){
   const total=cart.reduce((s,p)=>s+p.sell_price,0);
-  const withC=Math.round(total*1.21);
+  const pct=window._cInstPercent||21;
+  const withC=Math.round(total*(1+pct/100));
   const m12=Math.round(withC/12),m24=Math.round(withC/24);
+  const pctBtn=(v)=>`<button class="pct-opt ${pct===v?'active':''}" onclick="setCartInstPercent(${v})" style="flex:1;padding:10px;border-radius:10px;border:1px solid ${pct===v?'var(--accent)':'var(--border2)'};background:${pct===v?'var(--accent)':'var(--surface2)'};color:${pct===v?'#000':'var(--white)'};font-weight:700;cursor:pointer;font-family:'Space Grotesk',sans-serif;font-size:14px;">${v}%</button>`;
   document.getElementById('modal-body').innerHTML=`
     <div class="modal-title">📅 Рассрочка на корзину</div>
     <div class="modal-sub">${cart.length} телефонов</div>
+    <div class="form-group"><label class="form-label">Процент банка</label><div style="display:flex;gap:8px;">${pctBtn(15)}${pctBtn(17)}${pctBtn(21)}</div></div>
     <div style="background:#1A1408;border:1px solid #3A2E15;border-radius:12px;padding:14px;margin-bottom:14px;">
       <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:6px;"><span style="color:var(--gray);">За нал</span><b>${fmt(total)}</b></div>
-      <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:6px;"><span style="color:var(--gray);">+21% Kaspi</span><b style="color:var(--orange);">+${fmt(withC-total)}</b></div>
+      <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:6px;"><span style="color:var(--gray);">+${pct}% Kaspi</span><b style="color:var(--orange);">+${fmt(withC-total)}</b></div>
       <div style="height:1px;background:var(--border2);margin:8px 0;"></div>
       <div style="display:flex;justify-content:space-between;font-size:15px;"><span><b>В рассрочку</b></span><b style="color:var(--accent);">${fmt(withC)}</b></div>
     </div>
@@ -1263,6 +1667,7 @@ function cartInstallment(){
     </div>`;
   window._cInstTerm=12;window._cInstTotal=withC;window._cInstMonthly=m12;
 }
+function setCartInstPercent(pct){window._cInstPercent=pct;renderCartInstallment();}
 function pickCartInst(months,monthly,el){window._cInstTerm=months;window._cInstMonthly=monthly;document.querySelectorAll('.inst-opt').forEach(b=>{b.style.background='var(--surface2)';b.style.color='var(--white)';b.style.borderColor='var(--border2)';});el.style.background='var(--accent)';el.style.color='#000';el.style.borderColor='var(--accent)';}
 
 function cartClientForm(payment){
@@ -1290,8 +1695,9 @@ async function cartFinish(payment){
   for(const p of cart){
     p.sold=true;
     const sale={id:'S'+Date.now()+Math.random().toString(36).slice(2,5),point:currentUser.point||p.point,seller:currentUser.name,model:p.model+' '+p.storage,sell_price:p.sell_price,buy_price:p.buy_price,payment,created_at:new Date().toISOString(),client_name:clientName,client_phone:clientPhone,warranty_days:30,imei:p.imei,battery:p.battery,condition:p.condition,passport_id:p.id};
+    if(payment==='Рассрочка'){ const pct=window._cInstPercent||21; sale.inst_term=window._cInstTerm; sale.inst_total=window._cInstTotal; sale.inst_percent=pct; sale.installment_tax=Math.round(p.sell_price*(1+pct/100)*0.03); }
     DB.sales.push(sale);
-    if(cloudMode&&sb){try{await sb.from('products').update({sold:true}).eq('id',p.id);await sb.from('sales').insert([sale]);}catch(e){}}
+    if(cloudMode&&sb){try{await withTimeout(sb.from('products').update({sold:true}).eq('id',p.id));await withTimeout(sb.from('sales').insert([sale]));}catch(e){}}
   }
   saveLocal();
   cart=[];updateCartFab();closeModal();
@@ -1310,7 +1716,7 @@ function showMultiDoc(items,sale){
   document.getElementById('modal-body').innerHTML=`
     <div class="modal-title">✅ Продано ${items.length} телефонов</div>
     <div class="modal-sub">Единый документ на ${sale.clientName}</div>
-    <div class="warranty-doc">
+    <div class="warranty-doc" id="warranty-doc">
       <div class="wd-header"><div class="wd-logo">La<span>Phone</span></div><div class="wd-doctype">Договор · Гарантия<br>${items.length} телефонов</div></div>
       <div style="text-align:center;font-size:11px;color:var(--gray);margin-bottom:14px;">Документ № ${docNum} · ${fmtDate(start)}</div>
       ${items.map((p,i)=>`<div style="background:var(--surface2);border-radius:10px;padding:12px;margin-bottom:8px;">
@@ -1329,6 +1735,7 @@ function showMultiDoc(items,sale){
       <div class="wd-footer">Документ ${docNum} · La Phone Астана<br>Спасибо за покупку! 🤝</div>
     </div>
     <div class="modal-actions"><button class="modal-btn primary" onclick="sendMultiWA()">📱 Отправить клиенту</button></div>
+    <button class="modal-btn" style="width:100%;margin-top:8px;background:#3B82F620;color:var(--blue);border:1px solid var(--blue);" onclick="downloadMultiPDF()">📄 Скачать PDF</button>
     <button class="modal-btn secondary" style="width:100%;margin-top:8px;" onclick="closeModal();sellerHome();document.querySelectorAll('.tab')[0].click();">Готово</button>`;
   document.getElementById('modal').classList.add('open');
 }
@@ -1351,23 +1758,31 @@ function sellPhone(id){
       <button class="modal-btn" style="background:var(--green-dim);color:var(--green);border:1px solid var(--green);" onclick="clientForm('${id}','Наличные')">💵 Наличными — в кассу</button>
       <button class="modal-btn" style="background:var(--blue-dim);color:var(--blue);border:1px solid var(--blue);" onclick="clientForm('${id}','Kaspi')">📱 Kaspi перевод</button>
       <button class="modal-btn" style="background:var(--purple-dim);color:var(--purple);border:1px solid var(--purple);" onclick="installmentForm('${id}')">📅 Рассрочка Kaspi (+21%)</button>
-      <button class="modal-btn" style="background:#F9731620;color:var(--orange);border:1px solid var(--orange);" onclick="tradeInForm('${id}')">🔄 Обмен с доплатой</button>
+      <button class="modal-btn" style="background:#F9731620;color:var(--orange);border:1px solid var(--orange);" onclick="tradeInForm('${id}')">🔄 Трейд-ин</button>
+      <button class="modal-btn" style="background:#3B82F620;color:#60A5FA;border:1px solid #60A5FA;" onclick="mixedPaymentForm('${id}')">🔀 Часть сразу + часть в рассрочку</button>
       <button class="modal-btn secondary" onclick="openProduct('${id}')">Назад</button>
     </div>`;
 }
 
 // РАССРОЧКА с +21% и расчётом
 function installmentForm(id){
+  window._instPercent=21;window._instId=id;
+  renderInstallmentForm(id);
+}
+function renderInstallmentForm(id){
   const p=DB.products.find(x=>x.id===id);
-  const withCommission=Math.round(p.sell_price*1.21);
+  const pct=window._instPercent||21;
+  const withCommission=Math.round(p.sell_price*(1+pct/100));
   const m12=Math.round(withCommission/12);
   const m24=Math.round(withCommission/24);
+  const pctBtn=(v)=>`<button class="pct-opt ${pct===v?'active':''}" onclick="setInstPercent('${id}',${v})" style="flex:1;padding:10px;border-radius:10px;border:1px solid ${pct===v?'var(--accent)':'var(--border2)'};background:${pct===v?'var(--accent)':'var(--surface2)'};color:${pct===v?'#000':'var(--white)'};font-weight:700;cursor:pointer;font-family:'Space Grotesk',sans-serif;font-size:14px;">${v}%</button>`;
   document.getElementById('modal-body').innerHTML=`
     <div class="modal-title">📅 Рассрочка Kaspi</div>
     <div class="modal-sub">${p.model} · цена за нал ${fmt(p.sell_price)}</div>
+    <div class="form-group"><label class="form-label">Процент банка</label><div style="display:flex;gap:8px;">${pctBtn(15)}${pctBtn(17)}${pctBtn(21)}</div></div>
     <div style="background:#1A1408;border:1px solid #3A2E15;border-radius:12px;padding:14px;margin-bottom:14px;">
       <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:6px;"><span style="color:var(--gray);">Цена за наличные</span><b>${fmt(p.sell_price)}</b></div>
-      <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:6px;"><span style="color:var(--gray);">Комиссия Kaspi +21%</span><b style="color:var(--orange);">+${fmt(withCommission-p.sell_price)}</b></div>
+      <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:6px;"><span style="color:var(--gray);">Комиссия Kaspi +${pct}%</span><b style="color:var(--orange);">+${fmt(withCommission-p.sell_price)}</b></div>
       <div style="height:1px;background:var(--border2);margin:8px 0;"></div>
       <div style="display:flex;justify-content:space-between;font-size:15px;"><span><b>Сумма в рассрочку</b></span><b style="color:var(--accent);">${fmt(withCommission)}</b></div>
     </div>
@@ -1386,8 +1801,9 @@ function installmentForm(id){
       <button class="modal-btn primary" onclick="clientForm('${id}','Рассрочка')">✅ Дальше — данные клиента</button>
       <button class="modal-btn secondary" onclick="sellPhone('${id}')">Назад</button>
     </div>`;
-  window._instTerm=12;window._instMonthly=m12;window._instTotal=withCommission;
+  window._instTerm=12;window._instMonthly=m12;window._instTotal=withCommission;window._instPercentUsed=pct;
 }
+function setInstPercent(id,pct){window._instPercent=pct;renderInstallmentForm(id);}
 function pickInst(months,monthly,el){
   window._instTerm=months;window._instMonthly=monthly;
   document.querySelectorAll('.inst-opt').forEach(b=>{b.style.background='var(--surface2)';b.style.color='var(--white)';b.style.borderColor='var(--border2)';});
@@ -1395,10 +1811,121 @@ function pickInst(months,monthly,el){
 }
 
 // ОБМЕН С ДОПЛАТОЙ
+// СМЕШАННАЯ ОПЛАТА: часть сразу (нал/Kaspi-перевод) + часть в рассрочку
+function mixedPaymentForm(id){
+  const p=DB.products.find(x=>x.id===id);
+  window._mixedId=id;window._mixedUpfrontType='Наличные';
+  document.getElementById('modal-body').innerHTML=`
+    <div class="modal-title">🔀 Часть сразу + рассрочка</div>
+    <div class="modal-sub">${p.model} · всего ${fmt(p.sell_price)}</div>
+    <div class="form-group"><label class="form-label">Как клиент платит первую часть</label>
+      <div class="cond-pills">
+        <div class="cond-pill active" id="mx-type-cash" onclick="setMixedUpfrontType('Наличные')">💵 Наличные</div>
+        <div class="cond-pill" id="mx-type-kaspi" onclick="setMixedUpfrontType('Kaspi')">📱 Kaspi перевод</div>
+      </div>
+    </div>
+    <div class="form-group"><label class="form-label">Сумма первой части (₸)</label><input class="form-input" id="mx-upfront" placeholder="Например 100000" inputmode="numeric" oninput="calcMixedRemainder(${p.sell_price})"></div>
+    <div id="mx-result" style="background:var(--surface2);border-radius:12px;padding:14px;margin-bottom:14px;">
+      <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:6px;"><span style="color:var(--gray);">Всего за телефон</span><b>${fmt(p.sell_price)}</b></div>
+      <div style="display:flex;justify-content:space-between;font-size:13px;"><span style="color:var(--gray);">Остаток в рассрочку</span><b id="mx-remainder-val" style="color:var(--accent);">${fmt(p.sell_price)}</b></div>
+    </div>
+    <div class="modal-actions">
+      <button class="modal-btn primary" onclick="mixedContinueToInstallment('${id}')">✅ Дальше — рассрочка на остаток</button>
+      <button class="modal-btn secondary" onclick="sellPhone('${id}')">Назад</button>
+    </div>`;
+  window._mixedUpfrontAmount=0;
+}
+function setMixedUpfrontType(type){
+  window._mixedUpfrontType=type;
+  document.getElementById('mx-type-cash').classList.toggle('active',type==='Наличные');
+  document.getElementById('mx-type-kaspi').classList.toggle('active',type==='Kaspi');
+}
+function calcMixedRemainder(price){
+  const up=parseInt(document.getElementById('mx-upfront').value)||0;
+  window._mixedUpfrontAmount=up;
+  const remainder=Math.max(price-up,0);
+  document.getElementById('mx-remainder-val').textContent=fmt(remainder);
+  document.getElementById('mx-remainder-val').style.color = up>price ? 'var(--red)' : 'var(--accent)';
+}
+function mixedContinueToInstallment(id){
+  const p=DB.products.find(x=>x.id===id);
+  const up=window._mixedUpfrontAmount||0;
+  if(up<=0){showToast('⚠️ Укажи сумму первой части',true);return;}
+  if(up>=p.sell_price){showToast('⚠️ Первая часть не может быть больше или равна полной цене — тогда это просто наличные/Kaspi',true);return;}
+  window._mixedRemainder=p.sell_price-up;
+  mixedChooseRemainderType(id);
+}
+function mixedChooseRemainderType(id){
+  const p=DB.products.find(x=>x.id===id);
+  const remainder=window._mixedRemainder;
+  document.getElementById('modal-body').innerHTML=`
+    <div class="modal-title">🔀 Как оплатит остаток?</div>
+    <div class="modal-sub">${p.model} · остаток ${fmt(remainder)}</div>
+    <div style="background:var(--surface2);border-radius:12px;padding:14px;margin-bottom:14px;">
+      <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:6px;"><span style="color:var(--gray);">${window._mixedUpfrontType} сразу</span><b>${fmt(window._mixedUpfrontAmount)}</b></div>
+      <div style="display:flex;justify-content:space-between;font-size:13px;"><span style="color:var(--gray);">Остаток</span><b style="color:var(--accent);">${fmt(remainder)}</b></div>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:10px;">
+      <button class="modal-btn" style="background:var(--green-dim);color:var(--green);border:1px solid var(--green);" onclick="mixedRemainderSimple('${id}','Наличные')">💵 Остаток тоже наличными</button>
+      <button class="modal-btn" style="background:var(--blue-dim);color:var(--blue);border:1px solid var(--blue);" onclick="mixedRemainderSimple('${id}','Kaspi')">📱 Остаток Kaspi переводом</button>
+      <button class="modal-btn" style="background:var(--purple-dim);color:var(--purple);border:1px solid var(--purple);" onclick="mixedRemainderInstallment('${id}')">📅 Остаток в рассрочку Kaspi</button>
+      <button class="modal-btn secondary" onclick="mixedPaymentForm('${id}')">Назад</button>
+    </div>`;
+}
+function mixedRemainderSimple(id,type){
+  window._mixedRemainderType=type;
+  window._mixedRemainderIsInstallment=false;
+  clientForm(id,'Смешанная');
+}
+function mixedRemainderInstallment(id){
+  window._mixedRemainderIsInstallment=true;
+  window._mixedPercent=21;
+  renderMixedInstallment(id);
+}
+function renderMixedInstallment(id){
+  const p=DB.products.find(x=>x.id===id);
+  const remainder=window._mixedRemainder;
+  const pct=window._mixedPercent||21;
+  const withC=Math.round(remainder*(1+pct/100));
+  const m12=Math.round(withC/12),m24=Math.round(withC/24);
+  const pctBtn=(v)=>`<button class="pct-opt ${pct===v?'active':''}" onclick="setMixedPercent('${id}',${v})" style="flex:1;padding:10px;border-radius:10px;border:1px solid ${pct===v?'var(--accent)':'var(--border2)'};background:${pct===v?'var(--accent)':'var(--surface2)'};color:${pct===v?'#000':'var(--white)'};font-weight:700;cursor:pointer;font-family:'Space Grotesk',sans-serif;font-size:14px;">${v}%</button>`;
+  document.getElementById('modal-body').innerHTML=`
+    <div class="modal-title">📅 Рассрочка на остаток</div>
+    <div class="modal-sub">${p.model} · остаток ${fmt(remainder)} из ${fmt(p.sell_price)}</div>
+    <div style="background:var(--surface2);border-radius:12px;padding:14px;margin-bottom:14px;">
+      <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:6px;"><span style="color:var(--gray);">${window._mixedUpfrontType} сразу</span><b>${fmt(window._mixedUpfrontAmount)}</b></div>
+      <div style="display:flex;justify-content:space-between;font-size:13px;"><span style="color:var(--gray);">Остаток в рассрочку</span><b>${fmt(remainder)}</b></div>
+    </div>
+    <div class="form-group"><label class="form-label">Процент банка на остаток</label><div style="display:flex;gap:8px;">${pctBtn(15)}${pctBtn(17)}${pctBtn(21)}</div></div>
+    <div style="background:#1A1408;border:1px solid #3A2E15;border-radius:12px;padding:14px;margin-bottom:14px;">
+      <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:6px;"><span style="color:var(--gray);">Остаток</span><b>${fmt(remainder)}</b></div>
+      <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:6px;"><span style="color:var(--gray);">Комиссия Kaspi +${pct}%</span><b style="color:var(--orange);">+${fmt(withC-remainder)}</b></div>
+      <div style="height:1px;background:var(--border2);margin:8px 0;"></div>
+      <div style="display:flex;justify-content:space-between;font-size:15px;"><span><b>Сумма в рассрочку</b></span><b style="color:var(--accent);">${fmt(withC)}</b></div>
+    </div>
+    <div class="form-group"><label class="form-label">Срок</label>
+      <div style="display:flex;gap:8px;">
+        <button class="inst-opt active" id="mxinst-12" onclick="pickMixedInst(12,${m12},this)" style="flex:1;padding:14px;border-radius:12px;border:1px solid var(--accent);background:var(--accent);color:#000;font-weight:700;cursor:pointer;font-family:'Space Grotesk',sans-serif;"><div style="font-size:16px;">0-0-12</div><div style="font-size:12px;margin-top:3px;">${fmt(m12)}/мес</div></button>
+        <button class="inst-opt" id="mxinst-24" onclick="pickMixedInst(24,${m24},this)" style="flex:1;padding:14px;border-radius:12px;border:1px solid var(--border2);background:var(--surface2);color:var(--white);font-weight:700;cursor:pointer;font-family:'Space Grotesk',sans-serif;"><div style="font-size:16px;">0-0-24</div><div style="font-size:12px;margin-top:3px;">${fmt(m24)}/мес</div></button>
+      </div>
+    </div>
+    <div class="modal-actions">
+      <button class="modal-btn primary" onclick="clientForm('${id}','Смешанная')">✅ Дальше — данные клиента</button>
+      <button class="modal-btn secondary" onclick="mixedChooseRemainderType('${id}')">Назад</button>
+    </div>`;
+  window._mixedTerm=12;window._mixedMonthly=m12;window._mixedTotal=withC;
+}
+function setMixedPercent(id,pct){window._mixedPercent=pct;renderMixedInstallment(id);}
+function pickMixedInst(months,monthly,el){
+  window._mixedTerm=months;window._mixedMonthly=monthly;
+  document.querySelectorAll('.inst-opt').forEach(b=>{b.style.background='var(--surface2)';b.style.color='var(--white)';b.style.borderColor='var(--border2)';});
+  el.style.background='var(--accent)';el.style.color='#000';el.style.borderColor='var(--accent)';
+}
+
 function tradeInForm(id){
   const p=DB.products.find(x=>x.id===id);
   document.getElementById('modal-body').innerHTML=`
-    <div class="modal-title">🔄 Обмен с доплатой</div>
+    <div class="modal-title">🔄 Трейд-ин</div>
     <div class="modal-sub">${p.model} · ${fmt(p.sell_price)}</div>
     <div class="form-group"><label class="form-label">Что сдаёт клиент (модель)</label><input class="form-input" id="ti-model" placeholder="iPhone 11 128GB"></div>
     <div class="form-group"><label class="form-label">IMEI старого телефона</label><input class="form-input" id="ti-imei" placeholder="35..." inputmode="numeric"></div>
@@ -1416,10 +1943,15 @@ function tradeInForm(id){
   window._tradeValue=0;
 }
 function saveTradeAndContinue(id){
-  window._tradeModel=document.getElementById('ti-model')?.value||'';
+  const p=DB.products.find(x=>x.id===id);
+  const model=document.getElementById('ti-model')?.value.trim()||'';
+  if(!model){showToast('⚠️ Укажи модель телефона, который сдаёт клиент',true);return;}
+  const tradeValue=parseInt(document.getElementById('ti-value')?.value)||0;
+  if(p && tradeValue>=p.sell_price){showToast('⚠️ Оценка старого телефона не может быть больше или равна цене нового',true);return;}
+  window._tradeModel=model;
   window._tradeImei=document.getElementById('ti-imei')?.value||'';
-  window._tradeValue=parseInt(document.getElementById('ti-value')?.value)||0;
-  clientForm(id,'Обмен');
+  window._tradeValue=tradeValue;
+  clientForm(id,'Трейд-ин');
 }
 function calcTrade(price){
   const v=parseInt(document.getElementById('ti-value').value)||0;
@@ -1436,7 +1968,14 @@ function clientForm(id, payment){
   const p=DB.products.find(x=>x.id===id);
   let priceInfo=fmt(p.sell_price);
   if(payment==='Рассрочка')priceInfo=fmt(window._instTotal)+' · '+window._instTerm+' мес';
-  if(payment==='Обмен')priceInfo='доплата '+fmt(p.sell_price-(window._tradeValue||0));
+  if(payment==='Трейд-ин')priceInfo='доплата '+fmt(p.sell_price-(window._tradeValue||0));
+  if(payment==='Смешанная'){
+    if(window._mixedRemainderIsInstallment){
+      priceInfo=window._mixedUpfrontType+' '+fmt(window._mixedUpfrontAmount)+' + рассрочка '+fmt(window._mixedTotal)+' ('+window._mixedTerm+' мес)';
+    }else{
+      priceInfo=window._mixedUpfrontType+' '+fmt(window._mixedUpfrontAmount)+' + '+window._mixedRemainderType+' '+fmt(window._mixedRemainder);
+    }
+  }
   document.getElementById('modal-body').innerHTML=`
     <div class="modal-title">📝 Данные покупателя</div>
     <div class="modal-sub">${p.model} · ${priceInfo} · ${payment}</div>
@@ -1457,21 +1996,86 @@ async function finishSale(id,payment){
   const warrantyDays=30; // гарантия всегда месяц
   const saleData={clientName,clientPhone,warrantyDays,payment,date:new Date()};
   // Данные рассрочки
-  if(payment==='Рассрочка'){saleData.instTerm=window._instTerm;saleData.instMonthly=window._instMonthly;saleData.instTotal=window._instTotal;}
+  if(payment==='Рассрочка'){saleData.instTerm=window._instTerm;saleData.instMonthly=window._instMonthly;saleData.instTotal=window._instTotal;saleData.instPercent=window._instPercentUsed||21;}
   // Данные обмена
-  if(payment==='Обмен'){saleData.tradeModel=window._tradeModel||'';saleData.tradeImei=window._tradeImei||'';saleData.tradeValue=window._tradeValue||0;saleData.doplata=p.sell_price-(window._tradeValue||0);}
-  await cloudSell(p,payment);
-  const lastSale=DB.sales[DB.sales.length-1];
-  if(lastSale){
-    lastSale.client_name=clientName;lastSale.client_phone=clientPhone;lastSale.warranty_days=warrantyDays;
-    lastSale.imei=p.imei;lastSale.battery=p.battery;lastSale.condition=p.condition;lastSale.passport_id=p.id;
-    if(payment==='Рассрочка'){lastSale.inst_term=window._instTerm;lastSale.inst_total=window._instTotal;}
-    if(payment==='Обмен'){lastSale.trade_model=saleData.tradeModel;lastSale.trade_value=saleData.tradeValue;lastSale.doplata=saleData.doplata;}
+  if(payment==='Трейд-ин'){saleData.tradeModel=window._tradeModel||'';saleData.tradeImei=window._tradeImei||'';saleData.tradeValue=window._tradeValue||0;saleData.doplata=p.sell_price-(window._tradeValue||0);}
+  // Данные смешанной оплаты (часть сразу + остаток нал/Kaspi/рассрочка)
+  if(payment==='Смешанная'){
+    saleData.mixedUpfrontType=window._mixedUpfrontType;
+    saleData.mixedUpfrontAmount=window._mixedUpfrontAmount;
+    saleData.mixedRemainder=window._mixedRemainder;
+    saleData.mixedRemainderIsInstallment=window._mixedRemainderIsInstallment;
+    if(window._mixedRemainderIsInstallment){
+      saleData.mixedInstPercent=window._mixedPercent;
+      saleData.mixedInstTerm=window._mixedTerm;
+      saleData.mixedInstTotal=window._mixedTotal;
+    }else{
+      saleData.mixedRemainderType=window._mixedRemainderType;
+    }
   }
-  // Обмен: старый телефон на склад
-  if(payment==='Обмен' && saleData.tradeModel){
-    DB.products.push({id:'LP'+Date.now(),point:currentUser.point,model:saleData.tradeModel,brand:'Trade-in',storage:'',color:'—',imei:saleData.tradeImei||'',buy_price:saleData.tradeValue,sell_price:Math.round(saleData.tradeValue*1.3),battery:85,condition:'Б/у (трейд-ин)',sold:false,created_at:new Date().toISOString()});
+
+  // Строим ПОЛНЫЙ объект продажи СРАЗУ, одним куском — без пост-патчинга,
+  // чтобы в облако улетали client_name, imei, passport_id и данные обмена/рассрочки
+  p.sold = true;
+  const sale = {
+    id:'S'+Date.now(),
+    point:currentUser.point||p.point,
+    seller:currentUser.name,
+    model:p.model+' '+p.storage,
+    sell_price:p.sell_price,
+    buy_price:p.buy_price,
+    payment,
+    created_at:new Date().toISOString(),
+    client_name:clientName,
+    client_phone:clientPhone,
+    warranty_days:warrantyDays,
+    imei:p.imei,
+    battery:p.battery,
+    condition:p.condition,
+    passport_id:p.id
+  };
+  if(payment==='Рассрочка'){ sale.inst_term=saleData.instTerm; sale.inst_total=saleData.instTotal; sale.inst_percent=saleData.instPercent; sale.installment_tax=Math.round(saleData.instTotal*0.03); }
+  if(payment==='Трейд-ин'){ sale.trade_model=saleData.tradeModel; sale.trade_value=saleData.tradeValue; sale.doplata=saleData.doplata; }
+  if(payment==='Смешанная'){
+    sale.mixed_upfront_type=saleData.mixedUpfrontType;
+    sale.mixed_upfront_amount=saleData.mixedUpfrontAmount;
+    sale.mixed_remainder=saleData.mixedRemainder;
+    sale.mixed_remainder_is_installment=saleData.mixedRemainderIsInstallment;
+    if(saleData.mixedRemainderIsInstallment){
+      sale.mixed_inst_percent=saleData.mixedInstPercent;
+      sale.mixed_inst_term=saleData.mixedInstTerm;
+      sale.mixed_inst_total=saleData.mixedInstTotal;
+      // Налог 3% считается ТОЛЬКО с той части, что реально пошла в рассрочку — не со всей суммы телефона
+      sale.installment_tax=Math.round(saleData.mixedInstTotal*0.03);
+    }else{
+      sale.mixed_remainder_type=saleData.mixedRemainderType;
+    }
   }
+
+  DB.sales.push(sale);
+
+  if(cloudMode && sb){
+    showCloud('syncing','🔄 Сохранение...');
+    try{
+      await withTimeout(sb.from('products').update({sold:true}).eq('id',p.id));
+      await withTimeout(sb.from('sales').insert([sale]));
+      showCloud('online','☁️ Сохранено в облако');
+    }catch(e){ showCloud('offline','📴 Сохранено локально'); }
+  }
+
+  // Обмен: старый телефон сразу на склад — и локально, и в облако
+  if(payment==='Трейд-ин' && saleData.tradeModel){
+    const tradeProduct={id:'LP'+Date.now(),point:currentUser.point,model:saleData.tradeModel,brand:'Trade-in',storage:'',color:'—',imei:saleData.tradeImei||'',buy_price:saleData.tradeValue,sell_price:Math.round(saleData.tradeValue*1.3),battery:85,condition:'Б/у (трейд-ин)',sold:false,created_at:new Date().toISOString()};
+    DB.products.push(tradeProduct);
+    if(cloudMode && sb){
+      try{
+        const r=await withTimeout(sb.from('products').insert([tradeProduct]));
+        if(r.error){ showToast('⚠️ Трейд-ин сохранён локально, ошибка облака: '+r.error.message, true); }
+        else{ showToast('📦 Старый телефон принят на склад'); }
+      }catch(e){ showToast('⚠️ Трейд-ин сохранён локально (нет связи с облаком)', true); }
+    }
+  }
+
   saveLocal();
   closeModal();
   showWarrantyDoc(p, saleData);
@@ -1488,7 +2092,14 @@ function showWarrantyDoc(p, sale){
   // payment детали
   let payDetail=sale.payment;
   if(sale.payment==='Рассрочка')payDetail=`Рассрочка Kaspi 0-0-${sale.instTerm} · ${fmt(sale.instTotal)} (${fmt(sale.instMonthly)}/мес)`;
-  if(sale.payment==='Обмен')payDetail=`Обмен: сдал ${sale.tradeModel} (${fmt(sale.tradeValue)}) + доплата ${fmt(sale.doplata)}`;
+  if(sale.payment==='Трейд-ин')payDetail=`Обмен: сдал ${sale.tradeModel} (${fmt(sale.tradeValue)}) + доплата ${fmt(sale.doplata)}`;
+  if(sale.payment==='Смешанная'){
+    if(sale.mixedRemainderIsInstallment){
+      payDetail=`${sale.mixedUpfrontType} ${fmt(sale.mixedUpfrontAmount)} + Рассрочка 0-0-${sale.mixedInstTerm} на остаток ${fmt(sale.mixedInstTotal)}`;
+    }else{
+      payDetail=`${sale.mixedUpfrontType} ${fmt(sale.mixedUpfrontAmount)} + ${sale.mixedRemainderType} ${fmt(sale.mixedRemainder)}`;
+    }
+  }
   window._warrantyData={
     model:p.model,storage:p.storage,color:p.color,imei:p.imei,battery:p.battery,
     condition:p.condition,defects:p.defects||'',pid:p.id,docNum,
@@ -1582,45 +2193,25 @@ La Phone · Астана
   showToast('📱 Отправляю клиенту...');
 }
 
-// Генерация настоящего PDF документа
-function sharePDF(){
-  const d=window._warrantyData;
-  if(!d){showToast('Нет данных',true);return;}
-  if(!window.jspdf){showToast('PDF доступен на телефоне/после публикации',true);return;}
+// Генерация настоящего PDF документа — рендерим готовый DOM-блок через html2canvas,
+// чтобы кириллица не превращалась в иероглифы (встроенные шрифты jsPDF не знают кириллицу)
+async function renderDocToPdf(elementId, filenamePrefix, docNum){
+  const el=document.getElementById(elementId);
+  if(!el){showToast('Нет данных',true);return;}
+  if(!window.jspdf || !window.html2canvas){showToast('PDF доступен на телефоне/после публикации',true);return;}
   try{
+    showToast('📄 Готовлю PDF...');
+    const canvas=await html2canvas(el,{backgroundColor:'#0A0A0A',scale:2,useCORS:true});
+    const imgData=canvas.toDataURL('image/jpeg',0.92);
     const {jsPDF}=window.jspdf;
-    const doc=new jsPDF({unit:'mm',format:'a5'});
-    let y=18;
-    doc.setFontSize(22);doc.setTextColor(20,20,20);
-    doc.text('La Phone',15,y);
-    doc.setFontSize(9);doc.setTextColor(120,120,120);
-    doc.text('Dogovor · Garantiya · Pasport',15,y+6);
-    doc.text('Dok. # '+d.docNum+'  '+d.start,15,y+11);
-    y+=22;
-    doc.setDrawColor(200,200,200);doc.line(15,y,125,y);y+=8;
-    doc.setFontSize(14);doc.setTextColor(20,20,20);
-    doc.text(d.model+' '+d.storage,15,y);y+=6;
-    doc.setFontSize(10);doc.setTextColor(90,90,90);
-    doc.text(d.color+' · '+d.condition,15,y);y+=10;
-    const row=(k,v)=>{doc.setTextColor(120,120,120);doc.text(k,15,y);doc.setTextColor(20,20,20);doc.text(String(v),125,y,{align:'right'});y+=6;};
-    doc.setFontSize(10);
-    row('IMEI:',d.imei);
-    row('Batareya:',d.battery+'%');
-    row('Sostoyanie:',d.condition);
-    y+=2;doc.line(15,y,125,y);y+=8;
-    row('Tsena:',d.price);
-    row('Oplata:',d.payment.length>22?d.payment.slice(0,22):d.payment);
-    row('Prodavets:','La Phone '+d.point);
-    row('Pokupatel:',d.name);
-    if(d.phone)row('Telefon:',d.phone);
-    y+=2;doc.line(15,y,125,y);y+=8;
-    row('Data prodazhi:',d.start);
-    row('Garantiya:','30 dney (1 mesyats)');
-    row('Deystvuet do:',d.end);
-    y+=10;doc.setFontSize(8);doc.setTextColor(150,150,150);
-    doc.text('La Phone · Astana · Spasibo za pokupku!',15,y);
-    const filename='LaPhone_'+d.docNum+'.pdf';
-    // Попытка поделиться через системное меню (там есть WhatsApp)
+    const pageWidthMm=105; // A5 ширина
+    const imgWidthMm=pageWidthMm-20;
+    const imgHeightMm=imgWidthMm*canvas.height/canvas.width;
+    const doc=new jsPDF({unit:'mm',format:[pageWidthMm,Math.max(imgHeightMm+20,148)]});
+    doc.setFillColor(10,10,10);
+    doc.rect(0,0,pageWidthMm,doc.internal.pageSize.getHeight(),'F');
+    doc.addImage(imgData,'JPEG',10,10,imgWidthMm,imgHeightMm);
+    const filename=filenamePrefix+'_'+docNum+'.pdf';
     if(navigator.share && navigator.canShare){
       const blob=doc.output('blob');
       const file=new File([blob],filename,{type:'application/pdf'});
@@ -1631,25 +2222,47 @@ function sharePDF(){
     }
     doc.save(filename);
     showToast('📄 PDF скачан');
-  }catch(e){showToast('PDF: открой на телефоне',true);}
+  }catch(e){console.error('PDF error',e);showToast('PDF: ошибка генерации',true);}
 }
 
-function sellerReport(){if(cloudMode&&sb){loadFromCloud();}
-  const s=mySales().filter(x=>!x.returned);
+function sharePDF(){
+  const d=window._warrantyData;
+  if(!d){showToast('Нет данных',true);return;}
+  renderDocToPdf('warranty-doc','LaPhone',d.docNum);
+}
+
+function downloadMultiPDF(){
+  const d=window._multiDoc;
+  if(!d){showToast('Нет данных',true);return;}
+  renderDocToPdf('warranty-doc','LaPhone_Multi',d.docNum);
+}
+
+async function sellerReport(){const _t=++tabToken;if(cloudMode&&sb){await loadFromCloud();if(_t!==tabToken)return;}
+  const s=mySales().filter(x=>!x.returned && isToday(x.created_at));
   const rev=s.reduce((a,b)=>a+b.sell_price,0);
   const cost=s.reduce((a,b)=>a+b.buy_price,0);
   const margin=rev-cost;
-  const cash=s.filter(x=>x.payment==='Наличные');const online=s.filter(x=>x.payment==='Kaspi');const inst=s.filter(x=>x.payment==='Рассрочка');
-  const returns=mySales().filter(x=>x.returned);
+  const cashTotal=s.reduce((a,b)=>a+splitSaleByMethod(b).cash,0);
+  const cashCount=s.filter(x=>splitSaleByMethod(x).cash>0).length;
+  const onlineTotal=s.reduce((a,b)=>a+splitSaleByMethod(b).kaspi,0);
+  const onlineCount=s.filter(x=>splitSaleByMethod(x).kaspi>0).length;
+  const instTotal=s.reduce((a,b)=>a+splitSaleByMethod(b).inst,0);
+  const instCount=s.filter(x=>splitSaleByMethod(x).inst>0).length;
+  const returns=mySales().filter(x=>x.returned && isToday(x.return_date||x.created_at));
+  const sMonthR=mySales().filter(x=>!x.returned && isThisMonth(x.created_at));
+  const marginMonthR=sMonthR.reduce((a,b)=>a+(b.sell_price-b.buy_price),0);
+  const earnedMonthR=Math.round(marginMonthR*0.10);
+  const earnedTodayR=Math.round(margin*0.10);
   document.getElementById('main').innerHTML=`
     <div class="section-label">Мой отчёт · сегодня</div>
     <div class="stats-grid"><div class="stat-card"><div class="stat-card-label">Продаж</div><div class="stat-card-val accent">${s.length}</div></div><div class="stat-card"><div class="stat-card-label">Выручка</div><div class="stat-card-val white">${fmt(rev)}</div></div></div>
     <div class="stats-grid"><div class="stat-card"><div class="stat-card-label">💸 Себестоимость</div><div class="stat-card-val blue">${fmt(cost)}</div></div><div class="stat-card"><div class="stat-card-label">📈 Маржа</div><div class="stat-card-val green">+${fmt(margin)}</div></div></div>
+    <div class="stats-grid"><div class="stat-card" style="border-left:3px solid var(--accent);"><div class="stat-card-label">💼 Заработал сегодня</div><div class="stat-card-val accent">${fmt(earnedTodayR)}</div></div><div class="stat-card" style="border-left:3px solid var(--gold);"><div class="stat-card-label">💼 Заработал за месяц</div><div class="stat-card-val" style="color:var(--gold);">${fmt(earnedMonthR)}</div></div></div>
     <div class="section-label">💵 Инкассация — что в кассе</div>
     <div class="payment-breakdown">
-      <div class="pay-card cash"><div class="pay-icon">💵</div><div class="pay-info"><div class="pay-label">Наличными — сдать в кассу</div><div class="pay-val">${fmt(cash.reduce((a,b)=>a+b.sell_price,0))}</div><div class="pay-sub">${cash.length} продаж · физические деньги</div></div></div>
-      <div class="pay-card online"><div class="pay-icon">📱</div><div class="pay-info"><div class="pay-label">Онлайн Kaspi</div><div class="pay-val">${fmt(online.reduce((a,b)=>a+b.sell_price,0))}</div><div class="pay-sub">${online.length} · на счёт</div></div></div>
-      <div class="pay-card installment"><div class="pay-icon">📅</div><div class="pay-info"><div class="pay-label">Рассрочка</div><div class="pay-val">${fmt(inst.reduce((a,b)=>a+b.sell_price,0))}</div><div class="pay-sub">${inst.length} · Kaspi</div></div></div>
+      <div class="pay-card cash"><div class="pay-icon">💵</div><div class="pay-info"><div class="pay-label">Наличными — сдать в кассу</div><div class="pay-val">${fmt(cashTotal)}</div><div class="pay-sub">${cashCount} продаж · физические деньги</div></div></div>
+      <div class="pay-card online"><div class="pay-icon">📱</div><div class="pay-info"><div class="pay-label">Онлайн Kaspi</div><div class="pay-val">${fmt(onlineTotal)}</div><div class="pay-sub">${onlineCount} · на счёт</div></div></div>
+      <div class="pay-card installment"><div class="pay-icon">📅</div><div class="pay-info"><div class="pay-label">Рассрочка</div><div class="pay-val">${fmt(instTotal)}</div><div class="pay-sub">${instCount} · Kaspi</div></div></div>
     </div>
     <div class="section-label">🧾 Мои продажи · возврат по гарантии</div>
     ${s.length?s.slice().reverse().map(x=>{
@@ -1665,9 +2278,9 @@ function sellerReport(){if(cloudMode&&sb){loadFromCloud();}
 }
 
 // ==================== ВКЛАДКА ВОЗВРАТ ====================
-function sellerReturns(){if(cloudMode&&sb){loadFromCloud();}
-  const allSold=DB.sales.filter(x=>x.passport_id && !x.returned);
-  const returns=DB.sales.filter(x=>x.returned);
+async function sellerReturns(){const _t=++tabToken;if(cloudMode&&sb){await loadFromCloud();if(_t!==tabToken)return;}
+  const allSold=mySales().filter(x=>x.passport_id && !x.returned);
+  const returns=mySales().filter(x=>x.returned);
   document.getElementById('main').innerHTML=`
     <div class="section-label" style="margin-top:2px;">↩️ Возврат телефона по гарантии</div>
     <div style="background:var(--surface2);border-radius:12px;padding:14px;margin-bottom:14px;font-size:13px;color:var(--gray);line-height:1.6;">
@@ -1694,7 +2307,7 @@ function renderReturnsList(items){
 
 function filterReturns(){
   const q=(document.getElementById('ret-search').value||'').toLowerCase();
-  const all=DB.sales.filter(x=>x.passport_id && !x.returned);
+  const all=mySales().filter(x=>x.passport_id && !x.returned);
   const f=all.filter(x=>(x.imei||'').includes(q)||(x.client_name||'').toLowerCase().includes(q)||(x.model||'').toLowerCase().includes(q));
   document.getElementById('returns-list').innerHTML=renderReturnsList(f);
 }
@@ -1739,18 +2352,29 @@ async function confirmReturn(idx){
   const reason=document.getElementById('ret-reason')?.value||'Возврат';
   // Возвращаем телефон на склад
   const existing=DB.products.find(p=>p.id===s.passport_id);
-  if(existing){existing.sold=false;}
-  else{
-    DB.products.push({id:s.passport_id||'LP'+Date.now(),point:s.point,model:s.model.replace(/\s+(128GB|256GB|512GB|64GB|1TB)/g,'').trim(),storage:'',color:'—',imei:s.imei||'',buy_price:s.buy_price,sell_price:s.sell_price,battery:s.battery||85,condition:s.condition||'Б/у',isNew:false,sold:false,created_at:new Date().toISOString()});
+  let returnedProduct=null;
+  if(existing){
+    existing.sold=false;
+    returnedProduct=existing;
+  } else {
+    returnedProduct={id:s.passport_id||'LP'+Date.now(),point:s.point,model:s.model.replace(/\s+(128GB|256GB|512GB|64GB|1TB)/g,'').trim(),storage:'',color:'—',imei:s.imei||'',buy_price:s.buy_price,sell_price:s.sell_price,battery:s.battery||85,condition:s.condition||'Б/у',isNew:false,sold:false,created_at:new Date().toISOString()};
+    DB.products.push(returnedProduct);
+    s.passport_id=returnedProduct.id; // фиксируем id, чтобы не потерять связь при следующей загрузке
   }
   // Помечаем продажу возвращённой
   s.returned=true;s.return_reason=reason;s.return_date=new Date().toISOString();
   saveLocal();
   if(cloudMode&&sb){
     try{
-      await sb.from('sales').update({returned:true,return_reason:reason,return_date:s.return_date}).eq('id',s.id);
-      if(s.passport_id)await sb.from('products').update({sold:false}).eq('id',s.passport_id);
-    }catch(e){}
+      await withTimeout(sb.from('sales').update({returned:true,return_reason:reason,return_date:s.return_date,passport_id:s.passport_id}).eq('id',s.id));
+      if(existing){
+        // Телефон уже был в облаке — просто снимаем флаг "продан"
+        await withTimeout(sb.from('products').update({sold:false}).eq('id',s.passport_id));
+      } else {
+        // Телефона не было в облаке (например, продажа была оформлена без синхронизации) — создаём заново
+        await withTimeout(sb.from('products').upsert([returnedProduct]));
+      }
+    }catch(e){ showToast('⚠️ Возврат сохранён локально, ошибка облака',true); }
   }
   closeModal();
   showToast('↩️ Возврат оформлен · −'+fmt(s.sell_price));
@@ -1768,7 +2392,22 @@ function showToast(msg,err){const t=document.getElementById('toast');t.textConte
 (async function initApp(){
   try{
     await initCloud();
-    if(cloudMode) await loadSettingsFromCloud();
+    // Восстанавливаем сессию, если человек уже входил раньше на этом устройстве —
+    // Supabase хранит токен в localStorage, эта проверка НЕ требует интернета
+    if(cloudMode && sb){
+      try{
+        const {data:{session}} = await withTimeout(sb.auth.getSession(), 6000);
+        if(session?.user?.email){
+          const userId = Object.keys(AUTH_EMAILS).find(k=>AUTH_EMAILS[k]===session.user.email);
+          if(userId && USERS[userId]){
+            currentUser = {...USERS[userId], id:userId};
+            startApp();
+            return; // не показываем экран логина — сразу внутрь
+          }
+        }
+      }catch(e){ console.log('session restore error', e); } // таймаут/нет сети — просто идём на экран логина
+    }
+    if(cloudMode) await withTimeout(loadSettingsFromCloud(),6000);
   }catch(e){ console.log('init error',e); }
   renderLoginButtons();
 })();
