@@ -431,7 +431,20 @@ async function loadFromCloud(){
       (async()=>{
         const {data:products} = await sb.from('products').select('*');
         const {data:sales} = await sb.from('sales').select('*');
-        if(products){ DB.products = products; }
+        if(products){
+          // Защита от гонки: если товар добавлен только что (последние 2 минуты)
+          // и облако ещё не успело его вернуть (задержка сети/кэша) — не стираем
+          // его с экрана, ждём следующего обновления, пока данные точно долетят
+          const cloudIds = new Set(products.map(p=>p.id));
+          const RECENT_MS = 2*60*1000;
+          const now = Date.now();
+          const localOnly = DB.products.filter(p=>{
+            if(cloudIds.has(p.id)) return false;
+            const created = new Date(p.created_at||0).getTime();
+            return (now-created) < RECENT_MS;
+          });
+          DB.products = [...products, ...localOnly];
+        }
         if(sales){ DB.sales = sales; }
         await loadSettingsFromCloud();
       })(),
@@ -605,6 +618,15 @@ function startApp(){
 }
 
 function fmt(n){return (n||0).toLocaleString('ru-RU')+' ₸';}
+// Защита: photos из облака иногда приходит не массивом, а строкой (или null) —
+// эта функция всегда возвращает настоящий массив, чтобы .map()/.length не падали
+function toPhotoArray(val){
+  if(Array.isArray(val)) return val;
+  if(typeof val==='string' && val.trim()){
+    try{ const parsed=JSON.parse(val); return Array.isArray(parsed)?parsed:[]; }catch(e){ return []; }
+  }
+  return [];
+}
 
 // Разбивает сумму продажи по факту оплаты (нал/Kaspi/рассрочка) — учитывает Смешанную оплату
 function splitSaleByMethod(sale){
@@ -1492,7 +1514,7 @@ function openProduct(id){
       <div class="detail-row"><div class="detail-key">💰 Цена продажи</div><div class="detail-val accent">${fmt(p.sell_price)}</div></div>
       <div class="detail-row"><div class="detail-key">📈 Маржа</div><div class="detail-val green">+${fmt(p.sell_price-p.buy_price)} (${p.buy_price?Math.round((p.sell_price-p.buy_price)/p.buy_price*100):0}%)</div></div>
     </div>
-    ${(p.photos&&p.photos.length)||p.video?`<div class="section-label">Фото и видео</div>${p.photos&&p.photos.length?`<div class="photo-preview">${p.photos.map(ph=>`<div class="photo-thumb" onclick="window.open('${ph}')"><img src="${ph}"></div>`).join('')}</div>`:''}${p.video?`<video src="${p.video}" controls style="width:100%;border-radius:10px;margin-top:8px;"></video>`:''}`:''}
+    ${(()=>{ const photoArr=toPhotoArray(p.photos); return photoArr.length||p.video?`<div class="section-label">Фото и видео</div>${photoArr.length?`<div class="photo-preview">${photoArr.map(ph=>`<div class="photo-thumb" onclick="window.open('${ph}')"><img src="${ph}"></div>`).join('')}</div>`:''}${p.video?`<video src="${p.video}" controls style="width:100%;border-radius:10px;margin-top:8px;"></video>`:''}`:''; })()}
     ${p.seller_name?`<div class="section-label">🪪 У кого купили телефон</div>
     <div class="detail-rows">
       <div class="detail-row"><div class="detail-key">Фамилия Имя</div><div class="detail-val">${p.seller_name}</div></div>
