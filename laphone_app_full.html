@@ -694,8 +694,17 @@ async function adminOverview(){
   const onlineCount=s.filter(x=>splitSaleByMethod(x).kaspi>0).length;
   const instTotal=s.reduce((a,b)=>a+splitSaleByMethod(b).inst,0);
   const instCount=s.filter(x=>splitSaleByMethod(x).inst>0).length;
+  // Чистая прибыль за месяц = валовая маржа − зарплаты (ФОТ) − налог с рассрочки, всё за текущий месяц
+  // Возвраты уже исключены фильтром !x.returned — при возврате эта карточка пересчитается сама при следующем открытии
+  const sMonthAll=DB.sales.filter(x=>!x.returned && isThisMonth(x.created_at));
+  const marginMonthAll=sMonthAll.reduce((a,b)=>a+(b.sell_price-b.buy_price),0);
+  const salaryMonthAll=Math.round(marginMonthAll*0.10);
+  const calcTaxMonth=(sales)=>sales.reduce((a,b)=>a+(b.installment_tax!=null?b.installment_tax:Math.round((b.inst_total||Math.round(b.sell_price*1.21))*0.03)),0);
+  const taxMonthAll=calcTaxMonth(sMonthAll.filter(x=>isInstallmentTaxable(x)));
+  const netProfitMonth=marginMonthAll-salaryMonthAll-taxMonthAll;
   document.getElementById('main').innerHTML=`
     <div class="hero-stat"><div class="hs-label">Выручка всей сети · сегодня</div><div class="hs-value">${fmt(rev)}</div><div class="hs-change">↑ ${s.length} продаж по 3 точкам</div></div>
+    <div class="stat-card" style="border-left:3px solid ${netProfitMonth>=0?'var(--accent)':'var(--red)'};margin-bottom:14px;"><div class="stat-card-label">💰 Моя чистая прибыль за месяц</div><div class="stat-card-val" style="color:${netProfitMonth>=0?'var(--accent)':'var(--red)'};font-size:26px;">${netProfitMonth>=0?'+':''}${fmt(netProfitMonth)}</div><div class="stat-card-sub">Маржа ${fmt(marginMonthAll)} − ЗП ${fmt(salaryMonthAll)} − налог ${fmt(taxMonthAll)}</div></div>
     <div class="stats-grid">
       <div class="stat-card"><div class="stat-card-label">Чистая прибыль</div><div class="stat-card-val green">+${fmt(profit)}</div></div>
       <div class="stat-card"><div class="stat-card-label">Средний чек</div><div class="stat-card-val accent">${fmt(s.length?Math.round(rev/s.length):0)}</div></div>
@@ -1716,7 +1725,7 @@ async function cartFinish(payment){
   // Оформляем каждый телефон
   for(const p of cart){
     p.sold=true;
-    const sale={id:'S'+Date.now()+Math.random().toString(36).slice(2,5),point:currentUser.point||p.point,seller:currentUser.name,model:p.model+' '+p.storage,sell_price:p.sell_price,buy_price:p.buy_price,payment,created_at:new Date().toISOString(),client_name:clientName,client_phone:clientPhone,warranty_days:30,imei:p.imei,battery:p.battery,condition:p.condition,passport_id:p.id};
+    const sale={id:'S'+Date.now()+Math.random().toString(36).slice(2,5),point:currentUser.point||p.point,seller:currentUser.name,model:p.model+' '+p.storage,sell_price:p.sell_price,buy_price:p.buy_price,payment,created_at:new Date().toISOString(),client_name:clientName,client_phone:clientPhone,warranty_days:30,imei:p.imei,battery:p.battery,condition:p.condition,passport_id:p.id,storage:p.storage,color:p.color};
     if(payment==='Рассрочка'){ const pct=window._cInstPercent||21; sale.inst_term=window._cInstTerm; sale.inst_total=window._cInstTotal; sale.inst_percent=pct; sale.installment_tax=Math.round(p.sell_price*(1+pct/100)*0.03); }
     DB.sales.push(sale);
     if(cloudMode&&sb){try{await withTimeout(sb.from('products').update({sold:true}).eq('id',p.id));await withTimeout(sb.from('sales').insert([sale]));}catch(e){}}
@@ -2399,7 +2408,7 @@ async function confirmReturn(idx){
     existing.sold=false;
     returnedProduct=existing;
   } else {
-    returnedProduct={id:s.passport_id||'LP'+Date.now(),point:s.point,model:s.model.replace(/\s+(128GB|256GB|512GB|64GB|1TB)/g,'').trim(),storage:'',color:'—',imei:s.imei||'',buy_price:s.buy_price,sell_price:s.sell_price,battery:s.battery||85,condition:s.condition||'Б/у',isNew:false,sold:false,created_at:new Date().toISOString()};
+    returnedProduct={id:s.passport_id||'LP'+Date.now(),point:s.point,model:s.model.replace(/\s+(128GB|256GB|512GB|64GB|1TB)/g,'').trim(),storage:s.storage||'',color:s.color||'—',imei:s.imei||'',buy_price:s.buy_price,sell_price:s.sell_price,battery:s.battery||85,condition:s.condition||'Б/у',isNew:false,sold:false,created_at:new Date().toISOString()};
     DB.products.push(returnedProduct);
     s.passport_id=returnedProduct.id; // фиксируем id, чтобы не потерять связь при следующей загрузке
   }
