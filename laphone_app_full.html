@@ -798,7 +798,7 @@ async function adminAnalytics(){const _t=++tabToken;if(cloudMode&&sb){await load
   // По брендам — определяем из названия модели
   const detectBrand=(m)=>{const ml=(m||'').toLowerCase();if(ml.includes('iphone')||ml.includes('airpods')||ml.includes('apple'))return 'Apple';if(ml.includes('samsung')||ml.includes('galaxy'))return 'Samsung';if(ml.includes('xiaomi')||ml.includes('redmi')||ml.includes('poco'))return 'Xiaomi';if(ml.includes('honor'))return 'Honor';if(ml.includes('vivo'))return 'Vivo';if(ml.includes('oppo'))return 'Oppo';if(ml.includes('pixel'))return 'Google';return 'Другое';};
   const byBrand={};
-  DB.products.forEach(p=>{const b=p.brand&&p.brand!=='Другое'&&p.brand!=='Trade-in'?p.brand:detectBrand(p.model);if(!byBrand[b])byBrand[b]={count:0};byBrand[b].count++;});
+  DB.products.filter(p=>p.sold!==true).forEach(p=>{const b=p.brand&&p.brand!=='Другое'&&p.brand!=='Trade-in'?p.brand:detectBrand(p.model);if(!byBrand[b])byBrand[b]={count:0};byBrand[b].count++;});
   const co={p1:'var(--accent)',p2:'var(--blue)',p3:'var(--purple)'};
   document.getElementById('main').innerHTML=`
     <div class="section-label" style="margin-top:2px;">🔥 Самые продаваемые модели</div>
@@ -815,7 +815,7 @@ async function adminAnalytics(){const _t=++tabToken;if(cloudMode&&sb){await load
 
     <div class="section-label">📦 Склад по брендам</div>
     <div class="chart-card">
-      ${Object.entries(byBrand).map(([b,d])=>{const max=Math.max(...Object.values(byBrand).map(x=>x.count),1);return `<div class="compare-row"><div class="compare-name">${b}</div><div class="compare-bar-track"><div class="compare-bar-fill" style="width:${Math.max(d.count/max*100,18)}%;background:var(--accent);">${d.count} шт</div></div></div>`;}).join('')}
+      ${Object.keys(byBrand).length?Object.entries(byBrand).map(([b,d])=>{const max=Math.max(...Object.values(byBrand).map(x=>x.count),1);return `<div class="compare-row"><div class="compare-name">${b}</div><div class="compare-bar-track"><div class="compare-bar-fill" style="width:${Math.max(d.count/max*100,18)}%;background:var(--accent);">${d.count} шт</div></div></div>`;}).join(''):'<div class="empty"><div class="empty-text">Склад пуст — всё распродано 🎉</div></div>'}
     </div>
 
     <div class="section-label">📅 Продажи по дням недели</div>
@@ -2295,7 +2295,7 @@ async function sellerReport(){const _t=++tabToken;if(cloudMode&&sb){await loadFr
         <div class="prod-right"><div class="prod-price">${fmt(x.sell_price)}</div><button onclick="returnSale(${si})" style="margin-top:4px;font-size:10px;padding:4px 10px;border-radius:8px;border:1px solid var(--red);background:var(--red-dim);color:var(--red);cursor:pointer;">↩️ Возврат</button></div>
       </div>`;
     }).join(''):'<div class="empty"><div class="empty-text">Продаж пока нет</div></div>'}
-    ${returns.length?`<div class="section-label">↩️ Возвраты сегодня (${returns.length})</div>${returns.map(x=>`<div class="prod-item" style="opacity:0.6;"><div class="prod-thumb">↩️</div><div class="prod-info"><div class="prod-name">${x.model}</div><div class="prod-meta" style="color:var(--red);">Возврат · ${x.client_name||''}</div></div><div class="prod-right"><div class="prod-price" style="color:var(--red);">−${fmt(x.sell_price)}</div></div></div>`).join('')}`:''}
+    ${returns.length?`<div class="section-label">↩️ Возвраты сегодня (${returns.length})</div>${returns.map(x=>`<div class="prod-item" style="opacity:0.6;" onclick="openReturnDetail(${DB.sales.indexOf(x)})"><div class="prod-thumb">↩️</div><div class="prod-info"><div class="prod-name">${x.model}</div><div class="prod-meta" style="color:var(--red);">Возврат · ${x.client_name||''}</div></div><div class="prod-right"><div class="prod-price" style="color:var(--red);">−${fmt(x.sell_price)}</div></div></div>`).join('')}`:''}
     <div style="background:var(--surface2);border-radius:12px;padding:16px;margin-top:14px;text-align:center;font-size:13px;color:var(--gray);line-height:1.6;">✅ Все твои продажи автоматически видит владелец в своей панели в реальном времени</div>`;
 }
 
@@ -2311,7 +2311,7 @@ async function sellerReturns(){const _t=++tabToken;if(cloudMode&&sb){await loadF
     <div class="search-bar"><span>🔍</span><input id="ret-search" placeholder="Поиск по IMEI, клиенту или модели" oninput="filterReturns()"></div>
     <div class="section-label">Проданные телефоны</div>
     <div id="returns-list">${renderReturnsList(allSold)}</div>
-    ${returns.length?`<div class="section-label">↩️ Уже возвращено (${returns.length})</div>${returns.slice().reverse().map(x=>`<div class="prod-item" style="opacity:0.55;"><div class="prod-thumb">↩️</div><div class="prod-info"><div class="prod-name">${x.model}</div><div class="prod-meta" style="color:var(--red);">${x.return_reason||'Возврат'} · ${x.client_name||''}</div></div><div class="prod-right"><div class="prod-price" style="color:var(--red);">−${fmt(x.sell_price)}</div></div></div>`).join('')}`:''}
+    ${returns.length?`<div class="section-label">↩️ Уже возвращено (${returns.length})</div>${returns.slice().reverse().map(x=>`<div class="prod-item" style="opacity:0.55;" onclick="openReturnDetail(${DB.sales.indexOf(x)})"><div class="prod-thumb">↩️</div><div class="prod-info"><div class="prod-name">${x.model}</div><div class="prod-meta" style="color:var(--red);">${x.return_reason||'Возврат'} · ${x.client_name||''}</div></div><div class="prod-right"><div class="prod-price" style="color:var(--red);">−${fmt(x.sell_price)}</div></div></div>`).join('')}`:''}
   `;
 }
 
@@ -2325,6 +2325,26 @@ function renderReturnsList(items){
       <div class="prod-right"><div class="prod-price">${fmt(x.sell_price)}</div><div class="prod-stock" style="background:var(--red-dim);color:var(--red);">↩️ вернуть</div></div>
     </div>`;
   }).join('');
+}
+
+function openReturnDetail(si){
+  const s=DB.sales[si];
+  if(!s)return;
+  document.getElementById('modal-body').innerHTML=`
+    <div class="modal-title">↩️ Возврат оформлен</div>
+    <div class="modal-sub">${s.model}</div>
+    <div class="detail-rows">
+      <div class="detail-row"><div class="detail-key">IMEI</div><div class="detail-val">${s.imei||'—'}</div></div>
+      <div class="detail-row"><div class="detail-key">Клиент</div><div class="detail-val">${s.client_name||'—'}</div></div>
+      <div class="detail-row"><div class="detail-key">Телефон клиента</div><div class="detail-val">${s.client_phone||'—'}</div></div>
+      <div class="detail-row"><div class="detail-key">Сумма продажи</div><div class="detail-val">${fmt(s.sell_price)}</div></div>
+      <div class="detail-row"><div class="detail-key">Причина возврата</div><div class="detail-val" style="color:var(--red);">${s.return_reason||'Возврат'}</div></div>
+      <div class="detail-row"><div class="detail-key">Дата продажи</div><div class="detail-val">${new Date(s.created_at).toLocaleDateString('ru-RU')}</div></div>
+      <div class="detail-row"><div class="detail-key">Дата возврата</div><div class="detail-val">${s.return_date?new Date(s.return_date).toLocaleDateString('ru-RU'):'—'}</div></div>
+    </div>
+    <div style="font-size:12px;color:var(--gray);margin-top:12px;">Телефон возвращён на склад и снова доступен для продажи.</div>
+    <button class="modal-btn secondary" style="width:100%;margin-top:14px;" onclick="closeModal()">Закрыть</button>`;
+  document.getElementById('modal').classList.add('open');
 }
 
 function filterReturns(){
@@ -2389,13 +2409,10 @@ async function confirmReturn(idx){
   if(cloudMode&&sb){
     try{
       await withTimeout(sb.from('sales').update({returned:true,return_reason:reason,return_date:s.return_date,passport_id:s.passport_id}).eq('id',s.id));
-      if(existing){
-        // Телефон уже был в облаке — просто снимаем флаг "продан"
-        await withTimeout(sb.from('products').update({sold:false}).eq('id',s.passport_id));
-      } else {
-        // Телефона не было в облаке (например, продажа была оформлена без синхронизации) — создаём заново
-        await withTimeout(sb.from('products').upsert([returnedProduct]));
-      }
+      // Всегда upsert (не update) — гарантированно возвращает телефон на склад,
+      // даже если в облаке этой записи раньше не было (например, из-за старых багов синхронизации)
+      const r=await withTimeout(sb.from('products').upsert([returnedProduct]));
+      if(r.error){ showToast('⚠️ Возврат: телефон не сохранился в облако — '+r.error.message,true); console.error('RETURN UPSERT ERROR:',r.error); }
     }catch(e){ showToast('⚠️ Возврат сохранён локально, ошибка облака',true); }
   }
   closeModal();
