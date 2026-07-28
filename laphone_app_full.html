@@ -805,9 +805,13 @@ async function adminAnalytics(){const _t=++tabToken;if(cloudMode&&sb){await load
   const topModels=Object.entries(byModel).sort((a,b)=>b[1].count-a[1].count).slice(0,5);
   const profitModels=Object.entries(byModel).sort((a,b)=>b[1].profit-a[1].profit).slice(0,5);
   // По брендам — определяем из названия модели
-  const detectBrand=(m)=>{const ml=(m||'').toLowerCase();if(ml.includes('iphone')||ml.includes('airpods')||ml.includes('apple'))return 'Apple';if(ml.includes('samsung')||ml.includes('galaxy'))return 'Samsung';if(ml.includes('xiaomi')||ml.includes('redmi')||ml.includes('poco'))return 'Xiaomi';if(ml.includes('honor'))return 'Honor';if(ml.includes('vivo'))return 'Vivo';if(ml.includes('oppo'))return 'Oppo';if(ml.includes('pixel'))return 'Google';return 'Другое';};
-  const byBrand={};
-  DB.products.filter(p=>p.sold!==true).forEach(p=>{const b=p.brand&&p.brand!=='Другое'&&p.brand!=='Trade-in'?p.brand:detectBrand(p.model);if(!byBrand[b])byBrand[b]={count:0};byBrand[b].count++;});
+  const byModelStock={};
+  DB.products.filter(p=>p.sold!==true).forEach(p=>{
+    const key=p.model.trim()+(p.storage?' '+p.storage.trim():'');
+    if(!byModelStock[key])byModelStock[key]={count:0, batterySum:0};
+    byModelStock[key].count++;
+    byModelStock[key].batterySum += (p.battery||0);
+  });
   const co={p1:'var(--accent)',p2:'var(--blue)',p3:'var(--purple)'};
   document.getElementById('main').innerHTML=`
     <div class="section-label" style="margin-top:2px;">🔥 Самые продаваемые модели</div>
@@ -822,9 +826,13 @@ async function adminAnalytics(){const _t=++tabToken;if(cloudMode&&sb){await load
       <div class="rank-info"><div class="rank-name">${m[0]}</div><div class="rank-point">маржа ${m[1].count} шт</div></div>
       <div><div class="rank-revenue" style="color:var(--green);">+${fmt(m[1].profit)}</div><div class="rank-count">прибыль</div></div></div>`).join(''):'<div class="empty"><div class="empty-text">Пока нет данных</div></div>'}
 
-    <div class="section-label">📦 Склад по брендам</div>
+    <div class="section-label">📦 Склад по моделям</div>
     <div class="chart-card">
-      ${Object.keys(byBrand).length?Object.entries(byBrand).map(([b,d])=>{const max=Math.max(...Object.values(byBrand).map(x=>x.count),1);return `<div class="compare-row"><div class="compare-name">${b}</div><div class="compare-bar-track"><div class="compare-bar-fill" style="width:${Math.max(d.count/max*100,18)}%;background:var(--accent);">${d.count} шт</div></div></div>`;}).join(''):'<div class="empty"><div class="empty-text">Склад пуст — всё распродано 🎉</div></div>'}
+      ${Object.keys(byModelStock).length?Object.entries(byModelStock).sort((a,b)=>b[1].count-a[1].count).map(([m,d])=>{
+        const max=Math.max(...Object.values(byModelStock).map(x=>x.count),1);
+        const avgBattery=d.count?Math.round(d.batterySum/d.count):0;
+        return `<div class="compare-row"><div class="compare-name">${m}</div><div class="compare-bar-track"><div class="compare-bar-fill" style="width:${Math.max(d.count/max*100,18)}%;background:var(--accent);">${d.count} шт · 🔋${avgBattery}%</div></div></div>`;
+      }).join(''):'<div class="empty"><div class="empty-text">Склад пуст — всё распродано 🎉</div></div>'}
     </div>
 
     <div class="section-label">📅 Продажи по дням недели</div>
@@ -1453,9 +1461,7 @@ function renderFullStock(mode){
       <div class="pill active" onclick="setStockFilter('all',this)">Все (${stock.length})</div>
       <div class="pill" onclick="setStockFilter('new',this)">✨ Новые (${stock.filter(p=>p.isNew).length})</div>
       <div class="pill" onclick="setStockFilter('used',this)">📲 Б/У (${stock.filter(p=>!p.isNew).length})</div>
-      <div class="pill" onclick="setStockFilter('p1',this)">Точка 1</div>
-      <div class="pill" onclick="setStockFilter('p2',this)">Точка 2</div>
-      <div class="pill" onclick="setStockFilter('p3',this)">Точка 3</div>
+      ${POINTS.map(p=>`<div class="pill" onclick="setStockFilter('${p.id}',this)">${p.seller}</div>`).join('')}
     </div>
     <div class="section-label">${mode==='seller'?'Общий склад La Phone · продавай любой':'Весь склад'}</div>
     <div id="stock-list"></div>`;
