@@ -238,14 +238,6 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:22px;heigh
 .cond-pills{display:flex;gap:6px;flex-wrap:wrap;margin-top:6px;}
 .cond-pill{padding:9px 14px;border-radius:20px;border:1px solid var(--border2);background:var(--surface2);color:var(--gray);font-size:12px;font-weight:600;cursor:pointer;}
 .cond-pill.active{background:var(--accent);color:#000;border-color:var(--accent);}
-.photo-row{display:flex;gap:8px;margin-top:8px;}
-.photo-btn{flex:1;background:var(--surface2);border:1px dashed var(--border2);border-radius:11px;padding:16px;text-align:center;cursor:pointer;}
-.photo-btn input{display:none;}
-.photo-icon{font-size:22px;margin-bottom:4px;}
-.photo-label{font-size:11px;color:var(--gray);}
-.photo-preview{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-top:8px;}
-.photo-thumb{aspect-ratio:1;border-radius:8px;overflow:hidden;border:1px solid var(--border2);position:relative;}
-.photo-thumb img{width:100%;height:100%;object-fit:cover;}
 
 /* WARRANTY DOC */
 .warranty-doc{background:linear-gradient(160deg,#0F1A0F,#0A0A0A);border:1px solid #1A3A1A;border-radius:18px;padding:22px;margin-bottom:16px;}
@@ -323,7 +315,6 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:22px;heigh
 //
 const SUPABASE_URL = 'https://zafnvzhnrxjggpbmcpdb.supabase.co';
 const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InphZm52emhucnhqZ2dwYm1jcGRiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODI3MTc4MzAsImV4cCI6MjA5ODI5MzgzMH0.KADWU3gkOL-4fYYQee0fgbAce7a4N2ClOx9RoWkU-Wc';
-const PHOTOS_BUCKET = 'phone-photos';
 //
 //  Пока ключи пустые — работает локально на этом устройстве.
 //  Как вставишь ключи — автоматически синхронизируется
@@ -459,19 +450,7 @@ function defaultSales(){ return []; }
 
 function saveLocal(){
   try{
-    // Ссылки на фото (http...) — короткие строки, их храним спокойно.
-    // Если фото так и остались base64 (офлайн/ошибка загрузки) — не храним, переполнят лимit 5-10МБ.
-    const lightProducts=DB.products.map(p=>{
-      const photosAreUrls = p.photos && p.photos.length && typeof p.photos[0]==='string' && p.photos[0].startsWith('http');
-      const videoIsUrl = p.video && typeof p.video==='string' && p.video.startsWith('http');
-      return {
-        ...p,
-        hasPhotos: !!(p.photos && p.photos.length),
-        photos: photosAreUrls ? p.photos : undefined,
-        video: videoIsUrl ? p.video : undefined
-      };
-    });
-    localStorage.setItem('lp_products',JSON.stringify(lightProducts));
+    localStorage.setItem('lp_products',JSON.stringify(DB.products));
     localStorage.setItem('lp_sales',JSON.stringify(DB.sales));
   }catch(e){
     // Переполнение — чистим и сохраняем только продажи
@@ -618,20 +597,13 @@ function startApp(){
 }
 
 function fmt(n){return (n||0).toLocaleString('ru-RU')+' ₸';}
-// Защита: photos из облака иногда приходит не массивом, а строкой (или null) —
-// эта функция всегда возвращает настоящий массив, чтобы .map()/.length не падали
-function toPhotoArray(val){
-  if(Array.isArray(val)) return val;
-  if(typeof val==='string' && val.trim()){
-    try{ const parsed=JSON.parse(val); return Array.isArray(parsed)?parsed:[]; }catch(e){ return []; }
-  }
-  return [];
-}
 
 // Разбивает сумму продажи по факту оплаты (нал/Kaspi/рассрочка) — учитывает Смешанную оплату
+// Если у продажи есть doplata (частичный трейд-ин, в т.ч. из корзины) — реальные деньги считаются по doplata, а не по полной sell_price
 function splitSaleByMethod(sale){
-  if(sale.payment==='Наличные') return {cash:sale.sell_price, kaspi:0, inst:0};
-  if(sale.payment==='Kaspi') return {cash:0, kaspi:sale.sell_price, inst:0};
+  const cashAmt = sale.doplata!=null ? sale.doplata : sale.sell_price;
+  if(sale.payment==='Наличные') return {cash:cashAmt, kaspi:0, inst:0};
+  if(sale.payment==='Kaspi') return {cash:0, kaspi:cashAmt, inst:0};
   if(sale.payment==='Рассрочка') return {cash:0, kaspi:0, inst:sale.sell_price};
   if(sale.payment==='Смешанная'){
     const r={cash:0,kaspi:0,inst:0};
@@ -642,9 +614,9 @@ function splitSaleByMethod(sale){
     else r.kaspi+=(sale.mixed_remainder||0);
     return r;
   }
-  if(sale.payment==='Трейд-ин') return {cash:sale.doplata!=null?sale.doplata:sale.sell_price, kaspi:0, inst:0};
+  if(sale.payment==='Трейд-ин') return {cash:cashAmt, kaspi:0, inst:0};
   // Прочее (на всякий случай, если появится новый тип оплаты) — считаем как наличные
-  return {cash:sale.sell_price, kaspi:0, inst:0};
+  return {cash:cashAmt, kaspi:0, inst:0};
 }
 // Является ли продажа хоть частично "в рассрочку" — для налога 3%
 function isInstallmentTaxable(sale){
@@ -746,7 +718,17 @@ async function adminOverview(){
       <div class="stat-card" style="border-left:3px solid var(--orange);margin-bottom:${hasPartner?'10px':'14px'};"><div class="stat-card-label">👑 Мой налог сегодня</div><div class="stat-card-val" style="color:var(--orange);">${fmt(mine.tax)}</div><div class="stat-card-sub">${mine.inst.length} продаж в рассрочку · только мои точки</div></div>
       ${hasPartner?`<div class="stat-card" style="border-left:3px solid var(--blue);margin-bottom:14px;"><div class="stat-card-label">🤝 Налог партнёра сегодня</div><div class="stat-card-val" style="color:var(--blue);">${fmt(partner.tax)}</div><div class="stat-card-sub">${partner.inst.length} продаж в рассрочку · его точки</div></div>`:''}`;
     })()}
-    ${DB.sales.filter(x=>x.returned && isToday(x.return_date||x.created_at)).length?`<div class="section-label">↩️ Возвраты сегодня</div><div class="stat-card" style="border-left:3px solid var(--red);"><div class="stat-card-label">Возвращено телефонов</div><div class="stat-card-val" style="color:var(--red);">${DB.sales.filter(x=>x.returned && isToday(x.return_date||x.created_at)).length} шт · −${fmt(DB.sales.filter(x=>x.returned && isToday(x.return_date||x.created_at)).reduce((a,b)=>a+b.sell_price,0))}</div></div>`:''}`;
+    ${(()=>{
+      const returnsToday=DB.sales.filter(x=>x.returned && isToday(x.return_date||x.created_at));
+      if(!returnsToday.length) return '';
+      const totalReturned=returnsToday.reduce((a,b)=>a+b.sell_price,0);
+      return `<div class="section-label">↩️ Возвраты сегодня (${returnsToday.length} шт · −${fmt(totalReturned)})</div>`+
+        returnsToday.map(x=>{
+          const prod=DB.products.find(p=>p.id===x.passport_id);
+          const brandModel=prod?.brand?`${prod.brand} · ${x.model}`:x.model;
+          return `<div class="prod-item" onclick="openReturnDetail(${DB.sales.indexOf(x)})"><div class="prod-thumb">↩️</div><div class="prod-info"><div class="prod-name">${brandModel}</div><div class="prod-meta" style="color:var(--red);">Возврат · IMEI ${(x.imei||'').slice(-6)}</div></div><div class="prod-right"><div class="prod-price" style="color:var(--red);">−${fmt(x.sell_price)}</div></div></div>`;
+        }).join('');
+    })()}`;
   const bp=POINTS.map(p=>({name:p.name.split('·')[0].trim(),cls:p.cls,rev:s.filter(x=>x.point===p.id).reduce((a,b)=>a+b.sell_price,0)}));
   const mx=Math.max(...bp.map(x=>x.rev),1);const co={p1:'var(--accent)',p2:'var(--blue)',p3:'var(--purple)'};
   document.getElementById('ov-chart').innerHTML=bp.map(p=>`<div class="bar-col"><div class="bar-val">${Math.round(p.rev/1000)}к</div><div class="bar" style="height:${(p.rev/mx)*100}%;background:${co[p.cls]};"></div><div class="bar-label">${p.name}</div></div>`).join('');
@@ -965,15 +947,6 @@ async function adminFinance(){const _t=++tabToken;if(cloudMode&&sb){await loadFr
       <div style="font-size:11px;color:var(--gray2);text-align:center;margin-top:10px;line-height:1.5;">Считается автоматически из реальных продаж по точкам (10% от маржи) — ручной ввод не нужен.</div>
     </div>
 
-    <div class="section-label">📊 Итого за месяц (расчёт)</div>
-    <div class="intake-section">
-      <div class="detail-rows">
-        <div class="detail-row"><div class="detail-key">Расходы всего (ФОТ)</div><div class="detail-val" style="color:var(--red);">−${fmt(totalExp)}</div></div>
-        <div class="detail-row"><div class="detail-key">Прогноз прибыли (×30 дней)</div><div class="detail-val green">${fmt(grossProfit*30)}</div></div>
-        <div class="detail-row"><div class="detail-key">Чистыми в месяц (прогноз)</div><div class="detail-val ${(grossProfit*30-totalExp)>=0?'accent':''}" style="${(grossProfit*30-totalExp)<0?'color:var(--red)':''}">${fmt(grossProfit*30-totalExp)}</div></div>
-      </div>
-    </div>
-
     <div class="section-label">👥 Зарплаты точек · 10% от маржи</div>
     ${pointSalaries.map(({p,psMonth,salaryMonth,psToday,salaryToday})=>{
       return `<div class="pay-card" style="border-left-color:var(--accent);"><div class="pay-icon">💼</div><div class="pay-info"><div class="pay-label">${p.name.split('·')[0].trim()} · ${p.seller}</div>
@@ -1146,7 +1119,7 @@ async function exportBackup(){
     app:'LaPhone',
     version:1,
     exported_at:new Date().toISOString(),
-    products:DB.products, // ссылки на фото/видео теперь короткие URL — не вырезаем, они должны сохраняться в бэкапе
+    products:DB.products,
     sales:DB.sales,
     points:POINTS
   };
@@ -1300,12 +1273,12 @@ async function sellerHome(){const _t=++tabToken;if(cloudMode&&sb){await loadFrom
 }
 
 // ==================== ПРИЁМКА + СКАНЕР ====================
-let scannedIMEI='';let intakePhotos=[];let intakePhotoFiles=[];let intakeCondition='Отличное';
-let html5Scanner=null;let scanMode='barcode';let intakeVideoData=null;let intakeVideoFile=null;
+let scannedIMEI='';let intakeCondition='Отличное';
+let html5Scanner=null;let scanMode='barcode';
 
 function sellerIntake(){
   ++tabToken; // отменяем висящие перерисовки других вкладок
-  scannedIMEI='';intakePhotos=[];intakePhotoFiles=[];intakeCondition='Отличное';intakeVideoData=null;intakeVideoFile=null;
+  scannedIMEI='';intakeCondition='Отличное';
   document.getElementById('main').innerHTML=`
     <div class="section-label" style="margin-top:0;">📥 Приёмка телефона на склад</div>
     <div class="scan-mode-tabs">
@@ -1353,85 +1326,75 @@ function showImeiFound(imei){
   if(exists){document.getElementById('intake-form').innerHTML=`<div style="background:#1A1408;border:1px solid #3A2E15;border-radius:12px;padding:14px;font-size:13px;color:var(--gold);">⚠️ Уже на складе: ${exists.model}</div>`;return;}
   renderIntakeForm(imei);
 }
-function renderIntakeForm(imei){
-  document.getElementById('intake-form').innerHTML=`<div class="intake-section">
-    <div class="intake-imei-display"><div class="ii-icon">📲</div><div><div class="ii-label">IMEI телефона</div><div class="ii-val">${imei}</div></div></div>
-    <div class="form-group"><label class="form-label">Модель</label><input class="form-input" id="in-model" placeholder="iPhone 13" list="models-list">
+function buildIntakeFormHTML(imei, opts={}){
+  const pre = opts.prefill || {};
+  intakeCondition = pre.condition || 'Отличное';
+  const conds=['Новый','Отличное','Хорошее','Удовлетв.'];
+  const condPills = conds.map(c=>`<div class="cond-pill ${c===intakeCondition?'active':''}" onclick="setCond('${c}',this)">${c}</div>`).join('');
+  const storages=['64GB','128GB','256GB','512GB','1TB'];
+  const storageSel = pre.storage || '256GB';
+  const storageOpts = storages.map(s=>`<option ${s===storageSel?'selected':''}>${s}</option>`).join('');
+  const battery = pre.battery!=null?pre.battery:90;
+  const saveFn = opts.saveFnName || 'saveIntake';
+  const imeiBlock = opts.editableImei
+    ? `<div class="form-group"><label class="form-label">IMEI телефона</label><input class="form-input" id="in-imei-manual" value="${imei||''}" placeholder="35xxxxxxxxxxxxx" inputmode="numeric"></div>`
+    : `<div class="intake-imei-display"><div class="ii-icon">📲</div><div><div class="ii-label">IMEI телефона</div><div class="ii-val">${imei}</div></div></div>`;
+  return `<div class="intake-section">
+    ${imeiBlock}
+    <div class="form-group"><label class="form-label">Модель</label><input class="form-input" id="in-model" value="${pre.model||''}" placeholder="iPhone 13" list="models-list">
       <datalist id="models-list"><option>iPhone 11</option><option>iPhone 12</option><option>iPhone 13</option><option>iPhone 13 Pro</option><option>iPhone 14</option><option>iPhone 14 Pro</option><option>iPhone 15</option><option>iPhone 15 Pro</option><option>Samsung Galaxy S23</option><option>Samsung Galaxy S24</option><option>Xiaomi 13</option><option>Redmi Note 13</option></datalist></div>
-    <div class="form-row"><div class="form-group"><label class="form-label">Память</label><select class="form-select" id="in-storage"><option>64GB</option><option>128GB</option><option selected>256GB</option><option>512GB</option><option>1TB</option></select></div>
-      <div class="form-group"><label class="form-label">Цвет</label><input class="form-input" id="in-color" placeholder="Black"></div></div>
-    <div class="form-group"><label class="form-label">Ёмкость батареи</label><div class="battery-display"><div class="battery-val" id="in-bat-val">90%</div><input type="range" min="50" max="100" value="90" id="in-battery" oninput="document.getElementById('in-bat-val').textContent=this.value+'%'"></div></div>
-    <div class="form-group"><label class="form-label">Состояние</label><div class="cond-pills" id="cond-pills"><div class="cond-pill" onclick="setCond('Новый',this)">Новый</div><div class="cond-pill active" onclick="setCond('Отличное',this)">Отличное</div><div class="cond-pill" onclick="setCond('Хорошее',this)">Хорошее</div><div class="cond-pill" onclick="setCond('Удовлетв.',this)">Удовлетв.</div></div></div>
-    <div class="form-group"><label class="form-label">Дефекты</label><textarea class="form-textarea" id="in-defects" placeholder="Царапина на корпусе, скол снизу..."></textarea></div>
-    <div class="form-row"><div class="form-group"><label class="form-label">💸 Цена закупа</label><input class="form-input" id="in-buy" placeholder="70000" inputmode="numeric"></div>
-      <div class="form-group"><label class="form-label">💰 Цена продажи</label><input class="form-input" id="in-sell" placeholder="87000" inputmode="numeric"></div></div>
+    <div class="form-row"><div class="form-group"><label class="form-label">Память</label><select class="form-select" id="in-storage">${storageOpts}</select></div>
+      <div class="form-group"><label class="form-label">Цвет</label><input class="form-input" id="in-color" value="${pre.color||''}" placeholder="Black"></div></div>
+    <div class="form-group"><label class="form-label">Ёмкость батареи</label><div class="battery-display"><div class="battery-val" id="in-bat-val">${battery}%</div><input type="range" min="50" max="100" value="${battery}" id="in-battery" oninput="document.getElementById('in-bat-val').textContent=this.value+'%'"></div></div>
+    <div class="form-group"><label class="form-label">Состояние</label><div class="cond-pills" id="cond-pills">${condPills}</div></div>
+    <div class="form-group"><label class="form-label">Дефекты</label><textarea class="form-textarea" id="in-defects" placeholder="Царапина на корпусе, скол снизу...">${pre.defects||''}</textarea></div>
+    <div class="form-row"><div class="form-group"><label class="form-label">💸 Цена закупа</label><input class="form-input" id="in-buy" value="${pre.buy_price||''}" placeholder="70000" inputmode="numeric"></div>
+      <div class="form-group"><label class="form-label">💰 Цена продажи</label><input class="form-input" id="in-sell" value="${pre.sell_price||''}" placeholder="87000" inputmode="numeric"></div></div>
     <div style="background:#1A1408;border:1px solid #3A2E15;border-radius:12px;padding:14px;margin:14px 0;">
       <div style="font-family:'Space Grotesk',sans-serif;font-size:14px;font-weight:700;color:var(--gold);margin-bottom:4px;">🪪 Данные того, у кого купили телефон</div>
       <div style="font-size:11px;color:var(--gray);margin-bottom:12px;line-height:1.5;">Обязательно — это твоя защита, если телефон окажется краденым. Записывается один раз и хранится всегда вместе с этим IMEI.</div>
-      <div class="form-group"><label class="form-label">Фамилия Имя продавца</label><input class="form-input" id="in-seller-name" placeholder="Асылбеков Асан"></div>
-      <div class="form-group"><label class="form-label">Номер телефона продавца</label><input class="form-input" id="in-seller-phone" placeholder="+7 701 234 5678" inputmode="tel"></div>
-      <div class="form-group"><label class="form-label">ИИН продавца</label><input class="form-input" id="in-seller-iin" placeholder="123456789012" inputmode="numeric" maxlength="12"></div>
+      <div class="form-group"><label class="form-label">Фамилия Имя продавца</label><input class="form-input" id="in-seller-name" value="${pre.seller_name||''}" placeholder="Асылбеков Асан"></div>
+      <div class="form-group"><label class="form-label">Номер телефона продавца</label><input class="form-input" id="in-seller-phone" value="${pre.seller_phone||''}" placeholder="+7 701 234 5678" inputmode="tel"></div>
+      <div class="form-group"><label class="form-label">ИИН продавца</label><input class="form-input" id="in-seller-iin" value="${pre.seller_iin||''}" placeholder="123456789012" inputmode="numeric" maxlength="12"></div>
     </div>
-    <div class="form-group"><label class="form-label">📸 Фото и видео</label><div class="photo-row">
-      <label class="photo-btn"><input type="file" accept="image/*" capture="environment" multiple onchange="addIntakePhoto(this)"><div class="photo-icon">📸</div><div class="photo-label">Фото</div></label>
-      <label class="photo-btn"><input type="file" accept="video/*" capture="environment" onchange="addIntakeVideo(this)"><div class="photo-icon">🎥</div><div class="photo-label">Видео</div></label></div>
-      <div class="photo-preview" id="intake-photos"></div><div id="intake-video"></div></div>
-    <button class="modal-btn primary" style="width:100%;margin-top:8px;" onclick="saveIntake('${imei}')">✅ Принять на склад</button></div>`;
+    <button class="modal-btn primary" style="width:100%;margin-top:8px;" onclick="${saveFn}('${imei}')">✅ Принять на склад</button></div>`;
+}
+function renderIntakeForm(imei){
+  document.getElementById('intake-form').innerHTML = buildIntakeFormHTML(imei, {saveFnName:'saveIntake'});
 }
 function setCond(c,el){intakeCondition=c;document.querySelectorAll('#cond-pills .cond-pill').forEach(p=>p.classList.remove('active'));el.classList.add('active');}
-function addIntakePhoto(input){Array.from(input.files).forEach(file=>{if(intakePhotos.length>=8)return;intakePhotoFiles.push(file);const r=new FileReader();r.onload=e=>{intakePhotos.push(e.target.result);renderIntakePhotos();};r.readAsDataURL(file);});}
-function renderIntakePhotos(){document.getElementById('intake-photos').innerHTML=intakePhotos.map((p,i)=>`<div class="photo-thumb" onclick="intakePhotos.splice(${i},1);intakePhotoFiles.splice(${i},1);renderIntakePhotos();"><img src="${p}"></div>`).join('');}
-function addIntakeVideo(input){const f=input.files[0];if(!f)return;if(f.size>30*1024*1024){showToast('Видео больше 30MB',true);return;}intakeVideoFile=f;const r=new FileReader();r.onload=e=>{intakeVideoData=e.target.result;document.getElementById('intake-video').innerHTML=`<video src="${e.target.result}" controls style="width:100%;border-radius:10px;margin-top:8px;"></video>`;};r.readAsDataURL(f);}
-
-// Загрузка одного файла в Supabase Storage, возвращает публичную ссылку или null
-async function uploadToStorage(file, path){
-  if(!cloudMode || !sb) return null;
-  try{
-    const r = await withTimeout(sb.storage.from(PHOTOS_BUCKET).upload(path, file, {upsert:true, contentType:file.type}), 6000);
-    if(r.error){ console.error('Storage upload error:', r.error); return null; }
-    const { data } = sb.storage.from(PHOTOS_BUCKET).getPublicUrl(path);
-    return data?.publicUrl || null;
-  }catch(e){ console.error('Storage upload exception:', e); return null; }
-}
-async function saveIntake(imei){
+// Читает и валидирует общие поля формы приёмки (используется и обычной приёмкой, и приёмкой обменного телефона)
+function readIntakeFormFields(editableImei){
+  const imei = editableImei ? (document.getElementById('in-imei-manual')?.value||'').replace(/\D/g,'') : null;
   const model=document.getElementById('in-model').value.trim();
   const sell=parseInt(document.getElementById('in-sell').value)||0;
   const buy=parseInt(document.getElementById('in-buy').value)||0;
   const sellerName=document.getElementById('in-seller-name').value.trim();
   const sellerPhone=document.getElementById('in-seller-phone').value.trim();
   const sellerIin=document.getElementById('in-seller-iin').value.trim();
-  if(!model){showToast('⚠️ Укажи модель',true);return;}
-  if(!sell){showToast('⚠️ Укажи цену продажи',true);return;}
-  if(!sellerName){showToast('⚠️ Укажи фамилию и имя продавца',true);return;}
-  if(!sellerPhone){showToast('⚠️ Укажи номер телефона продавца',true);return;}
-  if(!sellerIin){showToast('⚠️ Укажи ИИН продавца',true);return;}
-  if(!/^\d{12}$/.test(sellerIin)){showToast('⚠️ ИИН должен быть из 12 цифр, без пробелов и дефисов',true);return;}
+  if(editableImei && imei.length<10){showToast('⚠️ Укажи корректный IMEI',true);return null;}
+  if(!model){showToast('⚠️ Укажи модель',true);return null;}
+  if(!sell){showToast('⚠️ Укажи цену продажи',true);return null;}
+  if(!sellerName){showToast('⚠️ Укажи фамилию и имя продавца',true);return null;}
+  if(!sellerPhone){showToast('⚠️ Укажи номер телефона продавца',true);return null;}
+  if(!sellerIin){showToast('⚠️ Укажи ИИН продавца',true);return null;}
+  if(!/^\d{12}$/.test(sellerIin)){showToast('⚠️ ИИН должен быть из 12 цифр, без пробелов и дефисов',true);return null;}
   let brand='Другое';const ml=model.toLowerCase();
   if(ml.includes('iphone'))brand='iPhone';else if(ml.includes('samsung'))brand='Samsung';else if(ml.includes('xiaomi')||ml.includes('redmi'))brand='Xiaomi';
-
-  // Загружаем фото и видео в Supabase Storage параллельно (если облако доступно) — получаем постоянные ссылки
-  let photoUrls=[];let videoUrl=null;
-  if(cloudMode&&sb&&(intakePhotoFiles.length||intakeVideoFile)){
-    showToast('🔄 Загружаю фото/видео...');
-    const photoUploadPromises=intakePhotoFiles.map((file,i)=>{
-      const ext=(file.name.split('.').pop()||'jpg').toLowerCase();
-      return uploadToStorage(file, imei+'/photo_'+i+'_'+Date.now()+'.'+ext);
-    });
-    const videoUploadPromise=intakeVideoFile
-      ? uploadToStorage(intakeVideoFile, imei+'/video_'+Date.now()+'.'+(intakeVideoFile.name.split('.').pop()||'mp4').toLowerCase())
-      : Promise.resolve(null);
-    const [photoResults, videoResult] = await Promise.all([Promise.all(photoUploadPromises), videoUploadPromise]);
-    photoUrls = photoResults.filter(url=>url);
-    videoUrl = videoResult;
-  }
-
-  const np={id:'LP'+Date.now(),point:currentUser.point,model,brand,storage:document.getElementById('in-storage').value,color:document.getElementById('in-color').value||'—',imei,buy_price:buy,sell_price:sell,battery:parseInt(document.getElementById('in-battery').value),condition:intakeCondition,isNew:intakeCondition==='Новый',defects:document.getElementById('in-defects').value||'',seller_name:sellerName,seller_phone:sellerPhone,seller_iin:sellerIin,photos:photoUrls.length?photoUrls:intakePhotos,video:videoUrl||intakeVideoData,sold:false,created_at:new Date().toISOString()};
+  return {imei,model,brand,sell,buy,sellerName,sellerPhone,sellerIin,
+    storage:document.getElementById('in-storage').value,
+    color:document.getElementById('in-color').value||'—',
+    battery:parseInt(document.getElementById('in-battery').value),
+    defects:document.getElementById('in-defects').value||''};
+}
+async function saveIntake(imei){
+  const f=readIntakeFormFields(false);
+  if(!f)return;
+  const np={id:'LP'+Date.now(),point:currentUser.point,model:f.model,brand:f.brand,storage:f.storage,color:f.color,imei,buy_price:f.buy,sell_price:f.sell,battery:f.battery,condition:intakeCondition,isNew:intakeCondition==='Новый',defects:f.defects,seller_name:f.sellerName,seller_phone:f.sellerPhone,seller_iin:f.sellerIin,sold:false,created_at:new Date().toISOString()};
   DB.products.push(np);
   if(cloudMode&&sb){
     try{
-      // В облако уходят ТОЛЬКО ссылки (photoUrls/videoUrl), не base64 — если загрузка не удалась, поля просто пустые в облаке
-      const cloudProduct={...np, photos:photoUrls, video:videoUrl};
-      const r=await withTimeout(sb.from('products').insert([cloudProduct]));
+      const r=await withTimeout(sb.from('products').insert([np]));
       if(r.error){showToast('❌ Ошибка облака: '+r.error.message,true);console.error('INSERT ERROR:',r.error);}
       else{showToast('☁️ Телефон сохранён в облако ✅');}
     }catch(e){showToast('❌ Ошибка: '+e.message,true);console.error('INSERT CATCH:',e);}
@@ -1439,9 +1402,44 @@ async function saveIntake(imei){
     showToast('⚠️ Сохранено локально — облако недоступно',true);
   }
   saveLocal();
-  showToast('✅ '+model+' принят на склад!');
+  showToast('✅ '+f.model+' принят на склад!');
   if(navigator.vibrate)navigator.vibrate([50,30,50]);
   sellerIntake();
+}
+
+// Полноценная приёмка обменного (трейд-ин) телефона — та же форма и валидация, что и у обычной приёмки
+// Очередь обменных телефонов на приёмку — используется и при одиночной продаже, и при продаже из корзины
+window._tradeInQueue = window._tradeInQueue || [];
+async function saveQueuedTradeIn(placeholderImei){
+  const f=readIntakeFormFields(true);
+  if(!f)return;
+  if(DB.products.find(p=>p.imei===f.imei && !p.sold)){showToast('⚠️ Телефон с таким IMEI уже на складе',true);return;}
+  const np={id:'LP'+Date.now()+Math.random().toString(36).slice(2,4),point:currentUser.point,model:f.model,brand:f.brand,storage:f.storage,color:f.color,imei:f.imei,buy_price:f.buy,sell_price:f.sell,battery:f.battery,condition:intakeCondition,isNew:intakeCondition==='Новый',defects:f.defects,seller_name:f.sellerName,seller_phone:f.sellerPhone,seller_iin:f.sellerIin,sold:false,created_at:new Date().toISOString()};
+  DB.products.push(np);
+  if(cloudMode&&sb){
+    try{
+      const r=await withTimeout(sb.from('products').insert([np]));
+      if(r.error){showToast('⚠️ Телефон сохранён локально, ошибка облака: '+r.error.message,true);}
+      else{showToast('📦 Обменный телефон принят на склад ✅');}
+    }catch(e){showToast('⚠️ Телефон сохранён локально (нет связи с облаком)',true);}
+  } else {
+    showToast('⚠️ Сохранено локально — облако недоступно',true);
+  }
+  saveLocal();
+  window._tradeInQueue.shift();
+  if(navigator.vibrate)navigator.vibrate([50,30,50]);
+  processTradeInQueue();
+}
+function processTradeInQueue(){
+  const queue=window._tradeInQueue||[];
+  if(queue.length===0){ closeModal(); document.querySelectorAll('.tab')[0].click(); return; }
+  const t=queue[0];
+  document.getElementById('modal-body').innerHTML=`
+    <div class="modal-title">📥 Приёмка обменного телефона</div>
+    <div class="modal-sub">${queue.length>1?`Осталось принять: ${queue.length} · `:''}Заполни полную приёмку, как обычно</div>
+    ${buildIntakeFormHTML(t.imei, {editableImei:true, saveFnName:'saveQueuedTradeIn', prefill:{model:t.model, buy_price:t.buy_price, seller_name:t.seller_name, seller_phone:t.seller_phone}})}
+  `;
+  document.getElementById('modal').classList.add('open');
 }
 
 // СКЛАД СЕТИ — продавец видит ВСЕ телефоны всех точек
@@ -1529,7 +1527,7 @@ function openProduct(id){
       <div class="detail-row"><div class="detail-key">💰 Цена продажи</div><div class="detail-val accent">${fmt(p.sell_price)}</div></div>
       <div class="detail-row"><div class="detail-key">📈 Маржа</div><div class="detail-val green">+${fmt(p.sell_price-p.buy_price)} (${p.buy_price?Math.round((p.sell_price-p.buy_price)/p.buy_price*100):0}%)</div></div>
     </div>
-    ${(()=>{ const photoArr=toPhotoArray(p.photos); return photoArr.length||p.video?`<div class="section-label">Фото и видео</div>${photoArr.length?`<div class="photo-preview">${photoArr.map(ph=>`<div class="photo-thumb" onclick="window.open('${ph}')"><img src="${ph}"></div>`).join('')}</div>`:''}${p.video?`<video src="${p.video}" controls style="width:100%;border-radius:10px;margin-top:8px;"></video>`:''}`:''; })()}
+    
     ${p.seller_name?`<div class="section-label">🪪 У кого купили телефон</div>
     <div class="detail-rows">
       <div class="detail-row"><div class="detail-key">Фамилия Имя</div><div class="detail-val">${p.seller_name}</div></div>
@@ -1614,6 +1612,7 @@ async function savePriceAdmin(id){
 }
 
 // ==================== КОРЗИНА (несколько телефонов) ====================
+let cartTradeIns=[]; // сдаваемые клиентом старые телефоны в этой продаже — Вариант Б: общий зачёт против всей корзины
 function addToCart(id){
   const p=DB.products.find(x=>x.id===id);
   if(!p||p.sold)return;
@@ -1636,9 +1635,13 @@ function updateCartFab(){
   fab.innerHTML='🛒<span class="cart-fab-badge">'+cart.length+'</span>';
 }
 
+function cartTradeInTotal(){ return cartTradeIns.reduce((s,t)=>s+(t.value||0),0); }
+
 function openCart(){
   if(cart.length===0){showToast('Корзина пуста');return;}
   const total=cart.reduce((s,p)=>s+p.sell_price,0);
+  const tradeTotal=cartTradeInTotal();
+  const remainder=Math.max(total-tradeTotal,0);
   document.getElementById('modal-body').innerHTML=`
     <div class="modal-title">🛒 Корзина · ${cart.length} тел.</div>
     <div class="modal-sub">Продажа одному клиенту</div>
@@ -1647,8 +1650,16 @@ function openCart(){
       <div class="cart-item-info"><div class="cart-item-name">${p.model} ${p.storage}</div><div class="cart-item-price">${fmt(p.sell_price)}</div></div>
       <div class="cart-item-remove" onclick="removeFromCart(${i})">✕</div>
     </div>`).join('')}
-    <div class="cart-total">
-      <div style="display:flex;justify-content:space-between;font-size:15px;"><span><b>Итого ${cart.length} телефонов</b></span><b style="color:var(--accent);font-family:'Space Grotesk',sans-serif;font-size:18px;">${fmt(total)}</b></div>
+    <div class="section-label" style="margin-top:16px;">🔄 Обменные телефоны клиента</div>
+    ${cartTradeIns.length?cartTradeIns.map((t,i)=>`<div class="cart-item">
+      <div class="prod-thumb">📴</div>
+      <div class="cart-item-info"><div class="cart-item-name">${t.model}</div><div class="cart-item-price" style="color:var(--orange);">−${fmt(t.value)}</div></div>
+      <div class="cart-item-remove" onclick="removeCartTradeIn(${i})">✕</div>
+    </div>`).join(''):'<div style="font-size:12px;color:var(--gray);padding:8px 0;">Нет сдаваемых телефонов</div>'}
+    <button class="modal-btn secondary" style="width:100%;margin-top:8px;background:var(--orange);color:#000;border:none;" onclick="addCartTradeInForm()">➕ Добавить обменный телефон</button>
+    <div class="cart-total" style="margin-top:14px;">
+      <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:${tradeTotal?'6px':'0'};"><span style="color:var(--gray);">Итого ${cart.length} телефонов</span><b>${fmt(total)}</b></div>
+      ${tradeTotal?`<div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:6px;"><span style="color:var(--gray);">Зачёт обменных телефонов</span><b style="color:var(--orange);">−${fmt(tradeTotal)}</b></div><div style="height:1px;background:var(--border2);margin:8px 0;"></div><div style="display:flex;justify-content:space-between;font-size:15px;"><span><b>К оплате</b></span><b style="color:var(--accent);font-family:'Space Grotesk',sans-serif;font-size:18px;">${fmt(remainder)}</b></div>`:''}
     </div>
     <div class="modal-actions">
       <button class="modal-btn primary" onclick="cartCheckout()">✅ Оформить на клиента</button>
@@ -1658,18 +1669,48 @@ function openCart(){
   document.getElementById('modal').classList.add('open');
 }
 
+function addCartTradeInForm(){
+  document.getElementById('modal-body').innerHTML=`
+    <div class="modal-title">🔄 Добавить обменный телефон</div>
+    <div class="modal-sub">Что сдаёт клиент в зачёт</div>
+    <div class="form-group"><label class="form-label">Модель сдаваемого телефона</label><input class="form-input" id="cti-model" placeholder="iPhone 11 128GB"></div>
+    <div class="form-group"><label class="form-label">IMEI (если знаешь сейчас)</label><input class="form-input" id="cti-imei" placeholder="35..." inputmode="numeric"></div>
+    <div class="form-group"><label class="form-label">Оценка (₸)</label><input class="form-input" id="cti-value" placeholder="40000" inputmode="numeric"></div>
+    <div class="modal-actions">
+      <button class="modal-btn primary" onclick="saveCartTradeIn()">✅ Добавить в корзину</button>
+      <button class="modal-btn secondary" onclick="openCart()">Отмена</button>
+    </div>`;
+  document.getElementById('modal').classList.add('open');
+}
+function saveCartTradeIn(){
+  const model=document.getElementById('cti-model').value.trim();
+  const imei=document.getElementById('cti-imei').value.trim();
+  const value=parseInt(document.getElementById('cti-value').value)||0;
+  if(!model){showToast('⚠️ Укажи модель сдаваемого телефона',true);return;}
+  if(!value){showToast('⚠️ Укажи оценку телефона',true);return;}
+  const cartTotal=cart.reduce((s,p)=>s+p.sell_price,0);
+  if(cartTradeInTotal()+value>=cartTotal){showToast('⚠️ Сумма обменных телефонов не может быть больше или равна сумме корзины',true);return;}
+  cartTradeIns.push({model,imei,value});
+  openCart();
+}
+function removeCartTradeIn(i){cartTradeIns.splice(i,1);openCart();}
+
+
 function removeFromCart(i){cart.splice(i,1);updateCartFab();if(cart.length===0){closeModal();}else openCart();}
-function clearCart(){cart=[];updateCartFab();closeModal();showToast('Корзина очищена');}
+function clearCart(){cart=[];cartTradeIns=[];updateCartFab();closeModal();showToast('Корзина очищена');}
 
 function cartCheckout(){
   const total=cart.reduce((s,p)=>s+p.sell_price,0);
+  const tradeTotal=cartTradeInTotal();
+  const remainder=Math.max(total-tradeTotal,0);
+  const hasTradeIn=tradeTotal>0;
   document.getElementById('modal-body').innerHTML=`
     <div class="modal-title">💰 Оплата корзины</div>
-    <div class="modal-sub">${cart.length} телефонов · ${fmt(total)}</div>
+    <div class="modal-sub">${cart.length} телефонов · ${hasTradeIn?`к оплате ${fmt(remainder)} (учтён зачёт ${fmt(tradeTotal)})`:fmt(total)}</div>
     <div style="display:flex;flex-direction:column;gap:10px;">
       <button class="modal-btn" style="background:var(--green-dim);color:var(--green);border:1px solid var(--green);" onclick="cartClientForm('Наличные')">💵 Наличными</button>
       <button class="modal-btn" style="background:var(--blue-dim);color:var(--blue);border:1px solid var(--blue);" onclick="cartClientForm('Kaspi')">📱 Kaspi перевод</button>
-      <button class="modal-btn" style="background:var(--purple-dim);color:var(--purple);border:1px solid var(--purple);" onclick="cartInstallment()">📅 Рассрочка (+21%)</button>
+      ${hasTradeIn?`<div style="font-size:11px;color:var(--gray2);text-align:center;padding:8px 0;line-height:1.5;">📅 Рассрочка на остаток при обменных телефонах пока недоступна в корзине — оформи наличными или Kaspi переводом</div>`:`<button class="modal-btn" style="background:var(--purple-dim);color:var(--purple);border:1px solid var(--purple);" onclick="cartInstallment()">📅 Рассрочка (+21%)</button>`}
       <button class="modal-btn secondary" onclick="openCart()">Назад</button>
     </div>`;
 }
@@ -1709,7 +1750,9 @@ function pickCartInst(months,monthly,el){window._cInstTerm=months;window._cInstM
 
 function cartClientForm(payment){
   const total=cart.reduce((s,p)=>s+p.sell_price,0);
-  let info=fmt(total);
+  const tradeTotal=cartTradeInTotal();
+  const remainder=Math.max(total-tradeTotal,0);
+  let info=tradeTotal>0?`к оплате ${fmt(remainder)} (зачёт ${fmt(tradeTotal)})`:fmt(total);
   if(payment==='Рассрочка')info=fmt(window._cInstTotal)+' · '+window._cInstTerm+' мес';
   document.getElementById('modal-body').innerHTML=`
     <div class="modal-title">📝 Данные покупателя</div>
@@ -1728,17 +1771,34 @@ async function cartFinish(payment){
   const clientPhone=document.getElementById('cl-phone')?.value.trim()||'';
   const soldItems=[...cart];
   const total=cart.reduce((s,p)=>s+p.sell_price,0);
+  const tradeTotal=cartTradeInTotal();
+  // Распределяем зачёт обменных телефонов пропорционально цене каждого товара в корзине,
+  // последний товар забирает остаток округления, чтобы сумма долей точно равнялась tradeTotal
+  let assignedTrade=0;
+  const itemsWithShare=cart.map((p,i)=>{
+    let share=0;
+    if(tradeTotal>0){
+      share = (i===cart.length-1) ? (tradeTotal-assignedTrade) : Math.round(p.sell_price/total*tradeTotal);
+      assignedTrade+=share;
+    }
+    return {p,share};
+  });
   // Оформляем каждый телефон
-  for(const p of cart){
+  for(const {p,share} of itemsWithShare){
     p.sold=true;
     const sale={id:'S'+Date.now()+Math.random().toString(36).slice(2,5),point:currentUser.point||p.point,seller:currentUser.name,model:p.model+' '+p.storage,sell_price:p.sell_price,buy_price:p.buy_price,payment,created_at:new Date().toISOString(),client_name:clientName,client_phone:clientPhone,warranty_days:30,imei:p.imei,battery:p.battery,condition:p.condition,passport_id:p.id,storage:p.storage,color:p.color};
+    if(tradeTotal>0) sale.doplata = p.sell_price - share;
     if(payment==='Рассрочка'){ const pct=window._cInstPercent||21; sale.inst_term=window._cInstTerm; sale.inst_total=window._cInstTotal; sale.inst_percent=pct; sale.installment_tax=Math.round(p.sell_price*(1+pct/100)*0.03); }
     DB.sales.push(sale);
     if(cloudMode&&sb){try{await withTimeout(sb.from('products').update({sold:true}).eq('id',p.id));await withTimeout(sb.from('sales').insert([sale]));}catch(e){}}
   }
   saveLocal();
   cart=[];updateCartFab();closeModal();
-  showMultiDoc(soldItems,{clientName,clientPhone,payment,total,date:new Date()});
+  if(cartTradeIns.length){
+    window._tradeInQueue=[...(window._tradeInQueue||[]),...cartTradeIns.map(t=>({model:t.model, imei:t.imei||'', buy_price:t.value, seller_name:clientName, seller_phone:clientPhone}))];
+    cartTradeIns=[];
+  }
+  showMultiDoc(soldItems,{clientName,clientPhone,payment,total,tradeTotal,date:new Date()});
   if(navigator.vibrate)navigator.vibrate([50,30,50]);
 }
 
@@ -1749,6 +1809,8 @@ function showMultiDoc(items,sale){
   const pt=POINTS.find(x=>x.id===currentUser.point)||POINTS[0];
   const docNum='LP-'+Date.now().toString().slice(-8);
   const pointName=pt.name.split('·')[1]?pt.name.split('·')[1].trim():pt.name;
+  const tradeTotal=sale.tradeTotal||0;
+  const toPay=Math.max(sale.total-tradeTotal,0);
   window._multiDoc={items,sale,docNum,pointName,start:fmtDate(start),end:fmtDate(end)};
   document.getElementById('modal-body').innerHTML=`
     <div class="modal-title">✅ Продано ${items.length} телефонов</div>
@@ -1762,7 +1824,10 @@ function showMultiDoc(items,sale){
         <div class="wd-row"><span>Батарея</span><b>${p.battery}%</b></div>
         <div class="wd-row"><span>Цена</span><b style="color:var(--accent);">${fmt(p.sell_price)}</b></div>
       </div>`).join('')}
-      <div class="cart-total"><div style="display:flex;justify-content:space-between;"><b>Итого</b><b style="color:var(--accent);font-family:'Space Grotesk',sans-serif;">${fmt(sale.total)}</b></div></div>
+      <div class="cart-total">
+        <div style="display:flex;justify-content:space-between;"><b>Итого</b><b style="color:var(--accent);font-family:'Space Grotesk',sans-serif;">${fmt(sale.total)}</b></div>
+        ${tradeTotal?`<div style="display:flex;justify-content:space-between;margin-top:6px;"><span style="color:var(--orange);">Зачёт обменных телефонов</span><b style="color:var(--orange);">−${fmt(tradeTotal)}</b></div><div style="display:flex;justify-content:space-between;margin-top:6px;"><b>К оплате</b><b style="color:var(--accent);font-family:'Space Grotesk',sans-serif;">${fmt(toPay)}</b></div>`:''}
+      </div>
       <div class="wd-section">
         <div class="wd-row"><span>Оплата</span><b>${sale.payment}</b></div>
         <div class="wd-row"><span>Покупатель</span><b>${sale.clientName}</b></div>
@@ -1773,7 +1838,7 @@ function showMultiDoc(items,sale){
     </div>
     <div class="modal-actions"><button class="modal-btn primary" onclick="sendMultiWA()">📱 Отправить клиенту</button></div>
     <button class="modal-btn" style="width:100%;margin-top:8px;background:#3B82F620;color:var(--blue);border:1px solid var(--blue);" onclick="downloadMultiPDF()">📄 Скачать PDF</button>
-    <button class="modal-btn secondary" style="width:100%;margin-top:8px;" onclick="closeModal();sellerHome();document.querySelectorAll('.tab')[0].click();">Готово</button>`;
+    <button class="modal-btn secondary" style="width:100%;margin-top:8px;" onclick="processTradeInQueue()">${(window._tradeInQueue&&window._tradeInQueue.length) ? `Готово · принять обменные телефоны (${window._tradeInQueue.length})` : 'Готово'}</button>`;
   document.getElementById('modal').classList.add('open');
 }
 
@@ -2100,17 +2165,10 @@ async function finishSale(id,payment){
     }catch(e){ showCloud('offline','📴 Сохранено локально'); }
   }
 
-  // Обмен: старый телефон сразу на склад — и локально, и в облако
+  // Обмен: старый телефон НЕ создаём автоматом — запоминаем данные,
+  // полноценную приёмку сделаем после того, как продавец закроет документ по проданному телефону
   if(payment==='Трейд-ин' && saleData.tradeModel){
-    const tradeProduct={id:'LP'+Date.now(),point:currentUser.point,model:saleData.tradeModel,brand:'Trade-in',storage:'',color:'—',imei:saleData.tradeImei||'',buy_price:saleData.tradeValue,sell_price:Math.round(saleData.tradeValue*1.3),battery:85,condition:'Б/у (трейд-ин)',sold:false,created_at:new Date().toISOString()};
-    DB.products.push(tradeProduct);
-    if(cloudMode && sb){
-      try{
-        const r=await withTimeout(sb.from('products').insert([tradeProduct]));
-        if(r.error){ showToast('⚠️ Трейд-ин сохранён локально, ошибка облака: '+r.error.message, true); }
-        else{ showToast('📦 Старый телефон принят на склад'); }
-      }catch(e){ showToast('⚠️ Трейд-ин сохранён локально (нет связи с облаком)', true); }
-    }
+    window._tradeInQueue=[...(window._tradeInQueue||[]),{model:saleData.tradeModel, imei:saleData.tradeImei||'', buy_price:saleData.tradeValue, seller_name:clientName, seller_phone:clientPhone}];
   }
 
   saveLocal();
@@ -2189,7 +2247,7 @@ function showWarrantyDoc(p, sale){
       <button class="modal-btn primary" onclick="sharePDF()">📄 Скачать / поделиться PDF</button>
     </div>
     <button class="modal-btn" style="width:100%;margin-top:8px;background:#25D36620;color:#25D366;border:1px solid #25D366;" onclick="sendWarrantyWA()">📱 Отправить текстом в WhatsApp</button>
-    <button class="modal-btn secondary" style="width:100%;margin-top:8px;" onclick="closeModal();sellerHome();document.querySelectorAll('.tab')[0].click();">Готово</button>`;
+    <button class="modal-btn secondary" style="width:100%;margin-top:8px;" onclick="processTradeInQueue()">${(window._tradeInQueue&&window._tradeInQueue.length) ? 'Готово · принять обменный телефон' : 'Готово'}</button>`;
   document.getElementById('modal').classList.add('open');
 }
 
@@ -2345,16 +2403,33 @@ function renderReturnsList(items){
 function openReturnDetail(si){
   const s=DB.sales[si];
   if(!s)return;
+  const prod=DB.products.find(p=>p.id===s.passport_id);
   document.getElementById('modal-body').innerHTML=`
-    <div class="modal-title">↩️ Возврат оформлен</div>
-    <div class="modal-sub">${s.model}</div>
+    <div class="modal-title">↩️ ${s.model}</div>
+    <div class="modal-sub">История телефона · возврат оформлен</div>
+    <div class="section-label" style="margin-top:0;">📱 Паспорт телефона</div>
     <div class="detail-rows">
-      <div class="detail-row"><div class="detail-key">IMEI</div><div class="detail-val">${s.imei||'—'}</div></div>
+      <div class="detail-row"><div class="detail-key">IMEI</div><div class="detail-val">${s.imei||prod?.imei||'—'}</div></div>
+      <div class="detail-row"><div class="detail-key">Память</div><div class="detail-val">${s.storage||prod?.storage||'—'}</div></div>
+      <div class="detail-row"><div class="detail-key">Батарея</div><div class="detail-val green">${s.battery||prod?.battery||'—'}%</div></div>
+      <div class="detail-row"><div class="detail-key">Состояние</div><div class="detail-val">${s.condition||prod?.condition||'—'}</div></div>
+    </div>
+    ${prod?.seller_name?`<div class="section-label">🪪 У кого куплен телефон (приёмка)</div>
+    <div class="detail-rows">
+      <div class="detail-row"><div class="detail-key">Фамилия Имя</div><div class="detail-val">${prod.seller_name}</div></div>
+      <div class="detail-row"><div class="detail-key">Телефон</div><div class="detail-val">${prod.seller_phone||'—'}</div></div>
+      <div class="detail-row"><div class="detail-key">ИИН</div><div class="detail-val">${prod.seller_iin||'—'}</div></div>
+    </div>`:''}
+    <div class="section-label">👤 Кому продан</div>
+    <div class="detail-rows">
       <div class="detail-row"><div class="detail-key">Клиент</div><div class="detail-val">${s.client_name||'—'}</div></div>
       <div class="detail-row"><div class="detail-key">Телефон клиента</div><div class="detail-val">${s.client_phone||'—'}</div></div>
       <div class="detail-row"><div class="detail-key">Сумма продажи</div><div class="detail-val">${fmt(s.sell_price)}</div></div>
-      <div class="detail-row"><div class="detail-key">Причина возврата</div><div class="detail-val" style="color:var(--red);">${s.return_reason||'Возврат'}</div></div>
       <div class="detail-row"><div class="detail-key">Дата продажи</div><div class="detail-val">${new Date(s.created_at).toLocaleDateString('ru-RU')}</div></div>
+    </div>
+    <div class="section-label">↩️ Возврат</div>
+    <div class="detail-rows">
+      <div class="detail-row"><div class="detail-key">Причина</div><div class="detail-val" style="color:var(--red);">${s.return_reason||'Возврат'}</div></div>
       <div class="detail-row"><div class="detail-key">Дата возврата</div><div class="detail-val">${s.return_date?new Date(s.return_date).toLocaleDateString('ru-RU'):'—'}</div></div>
     </div>
     <div style="font-size:12px;color:var(--gray);margin-top:12px;">Телефон возвращён на склад и снова доступен для продажи.</div>
@@ -2439,7 +2514,13 @@ async function confirmReturn(idx){
 // sendReport удалён — все отчёты видны в админке
 
 // ==================== UTILS ====================
-function closeModal(e){if(!e||e.target.classList.contains('modal-overlay'))document.getElementById('modal').classList.remove('open');}
+function closeModal(e){
+  if(e && e.target.classList.contains('modal-overlay') && window._tradeInQueue && window._tradeInQueue.length){
+    showToast('⚠️ Сначала прими обменный телефон — заполни форму до конца',true);
+    return;
+  }
+  if(!e||e.target.classList.contains('modal-overlay'))document.getElementById('modal').classList.remove('open');
+}
 function showToast(msg,err){const t=document.getElementById('toast');t.textContent=msg;t.className='toast show'+(err?' error':'');setTimeout(()=>t.classList.remove('show'),2500);}
 
 // INIT
