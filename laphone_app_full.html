@@ -604,7 +604,7 @@ function splitSaleByMethod(sale){
   const cashAmt = sale.doplata!=null ? sale.doplata : sale.sell_price;
   if(sale.payment==='Наличные') return {cash:cashAmt, kaspi:0, inst:0};
   if(sale.payment==='Kaspi') return {cash:0, kaspi:cashAmt, inst:0};
-  if(sale.payment==='Рассрочка') return {cash:0, kaspi:0, inst:sale.sell_price};
+  if(sale.payment==='Рассрочка') return {cash:0, kaspi:0, inst:cashAmt};
   if(sale.payment==='Смешанная'){
     const r={cash:0,kaspi:0,inst:0};
     if(sale.mixed_upfront_type==='Наличные') r.cash+=(sale.mixed_upfront_amount||0);
@@ -624,13 +624,13 @@ function isInstallmentTaxable(sale){
 }
 // Сумма, которая реально пошла в рассрочку (для Смешанной — только остаток, не вся цена телефона)
 function getInstallmentBase(sale){
-  if(sale.payment==='Рассрочка') return sale.sell_price;
+  if(sale.payment==='Рассрочка') return sale.doplata!=null ? sale.doplata : sale.sell_price;
   if(sale.payment==='Смешанная' && sale.mixed_remainder_is_installment) return sale.mixed_remainder||0;
   return 0;
 }
 // Сумма с накруткой банка (база для налога)
 function getInstallmentWithMarkup(sale){
-  if(sale.payment==='Рассрочка') return sale.inst_total||Math.round(sale.sell_price*1.21);
+  if(sale.payment==='Рассрочка') return Math.round(getInstallmentBase(sale)*(1+(sale.inst_percent||21)/100));
   if(sale.payment==='Смешанная' && sale.mixed_remainder_is_installment) return sale.mixed_inst_total||Math.round((sale.mixed_remainder||0)*1.21);
   return 0;
 }
@@ -1710,7 +1710,7 @@ function cartCheckout(){
     <div style="display:flex;flex-direction:column;gap:10px;">
       <button class="modal-btn" style="background:var(--green-dim);color:var(--green);border:1px solid var(--green);" onclick="cartClientForm('Наличные')">💵 Наличными</button>
       <button class="modal-btn" style="background:var(--blue-dim);color:var(--blue);border:1px solid var(--blue);" onclick="cartClientForm('Kaspi')">📱 Kaspi перевод</button>
-      ${hasTradeIn?`<div style="font-size:11px;color:var(--gray2);text-align:center;padding:8px 0;line-height:1.5;">📅 Рассрочка на остаток при обменных телефонах пока недоступна в корзине — оформи наличными или Kaspi переводом</div>`:`<button class="modal-btn" style="background:var(--purple-dim);color:var(--purple);border:1px solid var(--purple);" onclick="cartInstallment()">📅 Рассрочка (+21%)</button>`}
+      <button class="modal-btn" style="background:var(--purple-dim);color:var(--purple);border:1px solid var(--purple);" onclick="cartInstallment()">📅 Рассрочка (+21%)${hasTradeIn?' на остаток':''}</button>
       <button class="modal-btn secondary" onclick="openCart()">Назад</button>
     </div>`;
 }
@@ -1721,17 +1721,20 @@ function cartInstallment(){
 }
 function renderCartInstallment(){
   const total=cart.reduce((s,p)=>s+p.sell_price,0);
+  const tradeTotal=cartTradeInTotal();
+  const base=Math.max(total-tradeTotal,0);
   const pct=window._cInstPercent||21;
-  const withC=Math.round(total*(1+pct/100));
+  const withC=Math.round(base*(1+pct/100));
   const m12=Math.round(withC/12),m24=Math.round(withC/24);
   const pctBtn=(v)=>`<button class="pct-opt ${pct===v?'active':''}" onclick="setCartInstPercent(${v})" style="flex:1;padding:10px;border-radius:10px;border:1px solid ${pct===v?'var(--accent)':'var(--border2)'};background:${pct===v?'var(--accent)':'var(--surface2)'};color:${pct===v?'#000':'var(--white)'};font-weight:700;cursor:pointer;font-family:'Space Grotesk',sans-serif;font-size:14px;">${v}%</button>`;
   document.getElementById('modal-body').innerHTML=`
     <div class="modal-title">📅 Рассрочка на корзину</div>
-    <div class="modal-sub">${cart.length} телефонов</div>
+    <div class="modal-sub">${cart.length} телефонов${tradeTotal?' · с учётом обменных телефонов':''}</div>
     <div class="form-group"><label class="form-label">Процент банка</label><div style="display:flex;gap:8px;">${pctBtn(15)}${pctBtn(17)}${pctBtn(21)}</div></div>
     <div style="background:#1A1408;border:1px solid #3A2E15;border-radius:12px;padding:14px;margin-bottom:14px;">
-      <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:6px;"><span style="color:var(--gray);">За нал</span><b>${fmt(total)}</b></div>
-      <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:6px;"><span style="color:var(--gray);">+${pct}% Kaspi</span><b style="color:var(--orange);">+${fmt(withC-total)}</b></div>
+      <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:6px;"><span style="color:var(--gray);">Итого товаров</span><b>${fmt(total)}</b></div>
+      ${tradeTotal?`<div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:6px;"><span style="color:var(--orange);">Зачёт обменных телефонов</span><b style="color:var(--orange);">−${fmt(tradeTotal)}</b></div><div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:6px;"><span style="color:var(--gray);">Остаток за нал</span><b>${fmt(base)}</b></div>`:''}
+      <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:6px;"><span style="color:var(--gray);">+${pct}% Kaspi</span><b style="color:var(--orange);">+${fmt(withC-base)}</b></div>
       <div style="height:1px;background:var(--border2);margin:8px 0;"></div>
       <div style="display:flex;justify-content:space-between;font-size:15px;"><span><b>В рассрочку</b></span><b style="color:var(--accent);">${fmt(withC)}</b></div>
     </div>
@@ -1788,7 +1791,7 @@ async function cartFinish(payment){
     p.sold=true;
     const sale={id:'S'+Date.now()+Math.random().toString(36).slice(2,5),point:currentUser.point||p.point,seller:currentUser.name,model:p.model+' '+p.storage,sell_price:p.sell_price,buy_price:p.buy_price,payment,created_at:new Date().toISOString(),client_name:clientName,client_phone:clientPhone,warranty_days:30,imei:p.imei,battery:p.battery,condition:p.condition,passport_id:p.id,storage:p.storage,color:p.color};
     if(tradeTotal>0) sale.doplata = p.sell_price - share;
-    if(payment==='Рассрочка'){ const pct=window._cInstPercent||21; sale.inst_term=window._cInstTerm; sale.inst_total=window._cInstTotal; sale.inst_percent=pct; sale.installment_tax=Math.round(p.sell_price*(1+pct/100)*0.03); }
+    if(payment==='Рассрочка'){ const pct=window._cInstPercent||21; const taxBase=tradeTotal>0?(p.sell_price-share):p.sell_price; sale.inst_term=window._cInstTerm; sale.inst_total=window._cInstTotal; sale.inst_percent=pct; sale.installment_tax=Math.round(taxBase*(1+pct/100)*0.03); }
     DB.sales.push(sale);
     if(cloudMode&&sb){try{await withTimeout(sb.from('products').update({sold:true}).eq('id',p.id));await withTimeout(sb.from('sales').insert([sale]));}catch(e){}}
   }
