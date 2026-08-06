@@ -1682,16 +1682,22 @@ function addCartTradeInForm(){
     </div>`;
   document.getElementById('modal').classList.add('open');
 }
+let _savingCartTradeIn=false;
 function saveCartTradeIn(){
-  const model=document.getElementById('cti-model').value.trim();
+  if(_savingCartTradeIn)return;
+  _savingCartTradeIn=true;
+  const modelEl=document.getElementById('cti-model');
+  if(!modelEl){_savingCartTradeIn=false;return;}
+  const model=modelEl.value.trim();
   const imei=document.getElementById('cti-imei').value.trim();
   const value=parseInt(document.getElementById('cti-value').value)||0;
-  if(!model){showToast('⚠️ Укажи модель сдаваемого телефона',true);return;}
-  if(!value){showToast('⚠️ Укажи оценку телефона',true);return;}
+  if(!model){showToast('⚠️ Укажи модель сдаваемого телефона',true);_savingCartTradeIn=false;return;}
+  if(!value){showToast('⚠️ Укажи оценку телефона',true);_savingCartTradeIn=false;return;}
   const cartTotal=cart.reduce((s,p)=>s+p.sell_price,0);
-  if(cartTradeInTotal()+value>=cartTotal){showToast('⚠️ Сумма обменных телефонов не может быть больше или равна сумме корзины',true);return;}
+  if(cartTradeInTotal()+value>=cartTotal){showToast('⚠️ Сумма обменных телефонов не может быть больше или равна сумме корзины',true);_savingCartTradeIn=false;return;}
   cartTradeIns.push({model,imei,value});
   openCart();
+  _savingCartTradeIn=false;
 }
 function removeCartTradeIn(i){cartTradeIns.splice(i,1);openCart();}
 
@@ -2645,6 +2651,13 @@ function closeModal(e){
   if(!e||e.target.classList.contains('modal-overlay'))document.getElementById('modal').classList.remove('open');
 }
 function showToast(msg,err){const t=document.getElementById('toast');t.textContent=msg;t.className='toast show'+(err?' error':'');setTimeout(()=>t.classList.remove('show'),2500);}
+
+// Глобальный перехватчик ошибок — без него необработанное исключение молча "морозит" экран,
+// и продавец не понимает, что произошло. Теперь хотя бы видно, что что-то пошло не так.
+window.addEventListener('error', function(e){
+  console.error('Unhandled error:', e.error||e.message);
+  if(typeof showToast==='function') showToast('⚠️ Что-то пошло не так — попробуй ещё раз',true);
+});
 
 // INIT
 (async function initApp(){
