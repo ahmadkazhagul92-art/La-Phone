@@ -40,9 +40,20 @@ function isToday(dateStr){
   const d=new Date(dateStr),now=new Date();
   return d.getFullYear()===now.getFullYear() && d.getMonth()===now.getMonth() && d.getDate()===now.getDate();
 }
+// Ключ "рабочего месяца" (цикл 15-е число – 14-е число следующего месяца).
+// День < 15 — цикл начался 15-го числа ПРЕДЫДУЩЕГО календарного месяца.
+// День >= 15 — цикл начался 15-го числа ТЕКУЩЕГО календарного месяца.
+function workMonthKey(dateStr){
+  const d=new Date(dateStr);
+  let year=d.getFullYear(), month=d.getMonth();
+  if(d.getDate()<15){
+    month--;
+    if(month<0){ month=11; year--; }
+  }
+  return year*12+month;
+}
 function isThisMonth(dateStr){
-  const d=new Date(dateStr),now=new Date();
-  return d.getFullYear()===now.getFullYear() && d.getMonth()===now.getMonth();
+  return workMonthKey(dateStr)===workMonthKey(new Date());
 }
 function currentHalfYearRange(){
   const now=new Date();
