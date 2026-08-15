@@ -213,6 +213,18 @@ function calcTrade(price){
     <div style="display:flex;justify-content:space-between;font-size:15px;"><span><b>Доплата клиента</b></span><b style="color:${dop>=0?'var(--accent)':'var(--red)'};">${fmt(dop)}</b></div>`;
 }
 
+// Визуальная подсказка продавцу: цена телефона + аксессуары = сумма для озвучивания клиенту.
+// Ничего не сохраняется — значение поля acc-amount нигде не читается вне этой функции.
+function updateAccessoriesCalc(phonePrice){
+  const accEl=document.getElementById('acc-amount');
+  const lineEl=document.getElementById('acc-calc-line');
+  if(!accEl||!lineEl)return;
+  const acc=parseInt(accEl.value)||0;
+  lineEl.textContent = acc>0
+    ? `Сказать клиенту: ${fmt(phonePrice)} + ${fmt(acc)} = ${fmt(phonePrice+acc)}`
+    : `Сказать клиенту: ${fmt(phonePrice)}`;
+}
+
 function clientForm(id, payment){
   const p=DB.products.find(x=>x.id===id);
   let priceInfo=fmt(p.sell_price);
@@ -228,6 +240,8 @@ function clientForm(id, payment){
   document.getElementById('modal-body').innerHTML=`
     <div class="modal-title">📝 Данные покупателя</div>
     <div class="modal-sub">${p.model} · ${priceInfo} · ${payment}</div>
+    <div class="form-group"><label class="form-label">🎧 Аксессуары (₸) <span style="color:var(--gray);font-weight:400;">— не сохраняется, только чтобы прикинуть сумму для клиента</span></label><input class="form-input" id="acc-amount" placeholder="Например 20000" inputmode="numeric" oninput="updateAccessoriesCalc(${p.sell_price})"></div>
+    <div id="acc-calc-line" style="background:var(--surface2);border-radius:10px;padding:12px;margin-bottom:14px;font-size:13px;color:var(--gray);text-align:center;">Сказать клиенту: ${fmt(p.sell_price)}</div>
     <div class="form-group"><label class="form-label">Фамилия Имя клиента</label><input class="form-input" id="cl-name" placeholder="Асылбеков Асан"></div>
     <div class="form-group"><label class="form-label">Телефон (WhatsApp)</label><input class="form-input" id="cl-phone" placeholder="+7 701 234 5678" inputmode="tel"></div>
     <input type="hidden" id="cl-warranty" value="30">

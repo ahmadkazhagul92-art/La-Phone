@@ -233,6 +233,18 @@ function pickCartMixedInst(months,monthly,el){
   el.style.background='var(--accent)';el.style.color='#000';el.style.borderColor='var(--accent)';
 }
 
+// Визуальная подсказка продавцу: цена телефонов + аксессуары = сумма для озвучивания клиенту.
+// Ничего не сохраняется — значение поля cart-acc-amount нигде не читается вне этой функции.
+function updateCartAccessoriesCalc(phoneTotal){
+  const accEl=document.getElementById('cart-acc-amount');
+  const lineEl=document.getElementById('cart-acc-calc-line');
+  if(!accEl||!lineEl)return;
+  const acc=parseInt(accEl.value)||0;
+  lineEl.textContent = acc>0
+    ? `Сказать клиенту: ${fmt(phoneTotal)} + ${fmt(acc)} = ${fmt(phoneTotal+acc)}`
+    : `Сказать клиенту: ${fmt(phoneTotal)}`;
+}
+
 function cartClientForm(payment){
   const total=cart.reduce((s,p)=>s+p.sell_price,0);
   const tradeTotal=cartTradeInTotal();
@@ -243,6 +255,8 @@ function cartClientForm(payment){
   document.getElementById('modal-body').innerHTML=`
     <div class="modal-title">📝 Данные покупателя</div>
     <div class="modal-sub">${cart.length} телефонов · ${info} · ${payment}</div>
+    <div class="form-group"><label class="form-label">🎧 Аксессуары (₸) <span style="color:var(--gray);font-weight:400;">— не сохраняется, только чтобы прикинуть сумму для клиента</span></label><input class="form-input" id="cart-acc-amount" placeholder="Например 20000" inputmode="numeric" oninput="updateCartAccessoriesCalc(${total})"></div>
+    <div id="cart-acc-calc-line" style="background:var(--surface2);border-radius:10px;padding:12px;margin-bottom:14px;font-size:13px;color:var(--gray);text-align:center;">Сказать клиенту: ${fmt(total)}</div>
     <div class="form-group"><label class="form-label">Фамилия Имя клиента</label><input class="form-input" id="cl-name" placeholder="Асылбеков Асан"></div>
     <div class="form-group"><label class="form-label">Телефон (WhatsApp)</label><input class="form-input" id="cl-phone" placeholder="+7 701 234 5678" inputmode="tel"></div>
     <div style="background:var(--surface2);border-radius:10px;padding:12px;margin-bottom:14px;font-size:12px;color:var(--gray);text-align:center;">🛡 Гарантия La Phone: 30 дней на каждый телефон</div>
